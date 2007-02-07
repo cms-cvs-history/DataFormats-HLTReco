@@ -13,7 +13,7 @@ if ($#ARGV == 2) {
     my $arg = $ARGV[0] ; 
     chomp($arg) ; 
     if (($arg eq "-h") || ($arg eq "--help")) {
-        die "\nUsage: bookmarkPdf.pl <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+        die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
         "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
         "and results are output to bookmarked file <out.pdf>\n\n" . 
         "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n\n" . 
@@ -23,18 +23,31 @@ if ($#ARGV == 2) {
         "[Chapter name]^[Section name]^[Subsection name]^^[page number] ...\n" .
         "Each line of <bkmrk.txt> must specify a desired bookmark.\n" ; 
     } else {
-        die "Unknown argument.\n" ; 
+        die "\nInvalid format for input to (addBookmarks.csh/bookmarkPdf.pl).\n" .
+            "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+            "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
+            "and results are output to bookmarked file <out.pdf>\n" . 
+            "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ; 
+ 
     }
 } else {
-    die "\nUsage: bookmarkPdf.pl <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
         "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
         "and results are output to bookmarked file <out.pdf>\n" . 
         "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ; 
 }
 
 # Quick sanity checks
-open(INFILE,$infile) || die "Could not open $infile.\n" ; 
-open(BKMRKS,$bkmrkfile) || die "Could not open $bkmrkfile.\n" ; 
+open(INFILE,$infile) || die "Could not open $infile.\n" .
+    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
+    "and results are output to bookmarked file <out.pdf>\n" . 
+    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ;  
+open(BKMRKS,$bkmrkfile) || die "Could not open $bkmrkfile.\n" .
+    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
+    "and results are output to bookmarked file <out.pdf>\n" . 
+    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ;  
 
 # Create an array of bookmarks
 my @bookmarkPageLabels ; 
@@ -70,6 +83,7 @@ my $inBaseObj = 0 ;
 
 my $objBase ; my $objOutlines ; my $objPages ; 
 my $numPages = 0 ; my $pagesLine ; my $pageCountLine ; 
+my $outbaseLine ; 
 
 while (my $line = <INFILE>) {
     my $write_newline = 0 ; 
@@ -100,6 +114,7 @@ while (my $line = <INFILE>) {
     if ($inBaseObj) {
         $pdfStr = "Outlines" ; 
         if ($line =~ /$pdfStr/i) {
+            $outbaseLine = $lineCtr ; 
             my @splitter = split(/ /,$line) ; 
             $objOutlines = $splitter[1] ; 
         }
@@ -254,6 +269,10 @@ while (my $line = <INFILE>) {
         $lineCtr++ ; 
         $newPdf[$lineCtr] = $line ;
     } elsif ($keepDumping) {
+        if (($lineCtr > 0) && ($lineCtr == $outbaseLine)) {
+            chomp($line) ; 
+            $line .= " /PageMode /UseOutlines\n" ; 
+        }
         $newPdf[$lineCtr] = $line ; 
         $lineCtr++ ; 
         if ($write_newline) {

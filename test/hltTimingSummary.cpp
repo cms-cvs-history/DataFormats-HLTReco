@@ -388,10 +388,10 @@ int main(int argc, char ** argv)
 
   for (unsigned int pCtr=0; pCtr<moduleInPathTimer.size(); pCtr++) {
       int totalFailures = 0 ;
-      int evtsLeft = n_evts ; 
+      int evtsLeft = n_evts - firstEvent ; 
       for (unsigned int mCtr=0; mCtr<moduleInPathTimer.at(pCtr).size(); mCtr++) { 
 
-          double avgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr)/double(n_evts) ; // msec 
+          double avgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr)/double(n_evts - firstEvent) ; // msec 
           moduleInPathTime.at(pCtr)->Fill( double(mCtr), avgModuleTime ) ; 
           
 
@@ -406,7 +406,7 @@ int main(int argc, char ** argv)
           moduleInPathRejection.at(pCtr)->Fill( double(mCtr), modReject ) ; 
 
           //--- Calculate rejection per unit time for each module in path ---//
-          double scaledAvgModuleTime = avgModuleTime * n_evts / evtsLeft ; 
+          double scaledAvgModuleTime = avgModuleTime * (n_evts - firstEvent) / evtsLeft ; 
           moduleInPathScaledTime.at(pCtr)->Fill( double(mCtr), scaledAvgModuleTime ) ; 
           moduleInPathRejectTime.at(pCtr)->Fill( double(mCtr),
                                                  modReject / scaledAvgModuleTime ) ; 
@@ -415,14 +415,14 @@ int main(int argc, char ** argv)
           totalFailures += failures.at(pCtr).at(mCtr) ; 
 
           if (failures.at(pCtr).at(mCtr) >= 0) {
-              failedModule.at(pCtr)->Fill( double(mCtr), 100. * double(failures.at(pCtr).at(mCtr))/double(n_evts) );
+              failedModule.at(pCtr)->Fill( double(mCtr), 100. * double(failures.at(pCtr).at(mCtr))/double(n_evts - firstEvent) );
           }
       }
-      failedModule.at(pCtr)->Fill(-1.,100. * (double(n_evts-totalFailures)/double(n_evts))) ; 
+      failedModule.at(pCtr)->Fill(-1.,100. * (double(n_evts-firstEvent-totalFailures)/double(n_evts-firstEvent))) ; 
 
       double pathReject = 1000. ;
-      if (n_evts > totalFailures)
-          pathReject = double(n_evts) / double(n_evts - totalFailures) ; 
+      if ((n_evts-firstEvent) > totalFailures)
+          pathReject = double(n_evts-firstEvent) / double(n_evts - firstEvent - totalFailures) ; 
       pathRejection->Fill(double(pCtr), pathReject) ; 
   }
 
@@ -430,21 +430,21 @@ int main(int argc, char ** argv)
 
   
   for (unsigned int i=0; i<pathTimer.size(); i++) {
-      pathTimeSummary->Fill(double(i), pathTimer.at(i)/n_evts) ;
-      incPathTimeSummary->Fill(double(i), incPathTimer.at(i)/n_evts) ;
-      pathSuccessFraction->Fill(double(i), 100. * double(pathSuccess.at(i))/n_evts) ;
+      pathTimeSummary->Fill(double(i), pathTimer.at(i)/(n_evts-firstEvent)) ;
+      incPathTimeSummary->Fill(double(i), incPathTimer.at(i)/(n_evts-firstEvent)) ;
+      pathSuccessFraction->Fill(double(i), 100. * double(pathSuccess.at(i))/(n_evts-firstEvent)) ;
 
       uniquePathSuccessFraction->Fill(double(i),
-                                      100. * double(uniquePathSuccess.at(i))/n_evts) ; 
+                                      100. * double(uniquePathSuccess.at(i))/(n_evts-firstEvent)) ; 
       
       for (unsigned int j=0; j<pathTimer.size(); j++) {
           pathVsPathSummary->Fill( double(i), double(j),
-                                   double(successPathVsPath.at(i).at(j))/n_evts ) ; 
+                                   double(successPathVsPath.at(i).at(j))/(n_evts-firstEvent) ) ; 
       }
   }
 
   for (unsigned int i=0; i<moduleTimer.size(); i++) {
-      moduleTimeSummary->Fill(double(i), 1000. * (moduleTimer.at(i)/n_evts)) ;
+      moduleTimeSummary->Fill(double(i), 1000. * (moduleTimer.at(i)/(n_evts-firstEvent))) ;
   }
 
   //--- Dump results ---//

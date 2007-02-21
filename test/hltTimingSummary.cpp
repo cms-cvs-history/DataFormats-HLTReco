@@ -34,7 +34,8 @@ int main(int argc, char ** argv)
   std::string pdfname  = outbase + ".pdf" ;
   std::string txtname  = outbase + ".txt" ;
 
-  double userMaxTime = -1. ; 
+  double userMaxTime = -1. ;
+  bool skipFirstEvent = false ; 
   
   //--- Get parameters from command line ---//
   boost::program_options::options_description desc(
@@ -52,7 +53,8 @@ int main(int argc, char ** argv)
       ("pdf,p",      boost::program_options::value<std::string>(),
        "Output pdf file name")
       ("time,t",      boost::program_options::value<double>(),
-       "All relevant histogram time axes run from 0 to the user-specified value (in msec)") ; 
+       "All relevant histogram time axes run from 0 to the user-specified value (in msec)")
+      ("noFirst,f","Skip the first event (Default is to run over all events)") ; 
 
 
   std::string usage = "\nSample hltTimingSummary usage::\n" ; 
@@ -102,6 +104,9 @@ int main(int argc, char ** argv)
   }
   if (vmap.count("time")) {
       userMaxTime = vmap["time"].as<double>() ; 
+  }
+  if (vmap.count("noFirst")) {
+      skipFirstEvent = true ; 
   }
 
   std::cout << "Opening file " << filename << std::endl ;
@@ -154,7 +159,12 @@ int main(int argc, char ** argv)
   double maxTime = 0. ;
   double xmin = 0. ;
   double xmax = 0. ;
-  for (int ievt=0; ievt<n_evts; ievt++) {
+  int firstEvent = 0 ;
+  if (skipFirstEvent) {
+      firstEvent = 1 ;
+      std::cout << "Skipping the first event" << std::endl ; 
+  }
+  for (int ievt=firstEvent; ievt<n_evts; ievt++) {
       TBPerfInfo->GetEntry(ievt) ; 
       if ( HLTPerformance.totalTime() > maxTime ) maxTime = HLTPerformance.totalTime() ; 
   }
@@ -311,8 +321,8 @@ int main(int argc, char ** argv)
       moduleTimer.push_back(0.) ;
       moduleTimeSummary->GetXaxis()->SetBinLabel(mCtr++,modIter->name().c_str()) ; 
   }
-  
-  for (int ievt=0; ievt<n_evts; ievt++) {
+
+  for (int ievt=firstEvent; ievt<n_evts; ievt++) {
       TBPerfInfo->GetEntry(ievt) ;
 
       pCtr = 0 ;

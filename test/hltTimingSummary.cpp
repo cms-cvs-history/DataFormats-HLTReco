@@ -17,7 +17,7 @@
 
 #include "DataFormats/Provenance/interface/EventAuxiliary.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
-#include "FWCore/FWLite/src/AutoLibraryLoader.h"
+#include "FWCore/FWLite/interface/AutoLibraryLoader.h"
 
 //--- Bryan Dahmes, January 2007 ---//
 

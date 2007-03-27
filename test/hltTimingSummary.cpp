@@ -16,9 +16,9 @@
 #include <fstream>
 #include <string>
 
-#include "DataFormats/Common/interface/EventAux.h"
+#include "DataFormats/Provenance/interface/EventAuxiliary.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
-#include "FWCore/FWLite/src/AutoLibraryLoader.h"
+#include "FWCore/FWLite/interface/AutoLibraryLoader.h"
 
 //--- Created by:  
 //--- Bryan Dahmes (Bryan.Michael.Dahmes@cern.ch), January 2007

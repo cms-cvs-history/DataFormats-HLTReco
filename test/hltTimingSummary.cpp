@@ -16,9 +16,9 @@
 #include <fstream>
 #include <string>
 
-#include "DataFormats/Provenance/interface/EventAuxiliary.h"
+#include "DataFormats/Common/interface/EventAux.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
-#include "FWCore/FWLite/interface/AutoLibraryLoader.h"
+#include "FWCore/FWLite/src/AutoLibraryLoader.h"
 
 //--- Created by:  
 //--- Bryan Dahmes (Bryan.Michael.Dahmes@cern.ch), January 2007
@@ -708,6 +708,7 @@ int main(int argc, char ** argv) {
   }
 
   for (int ievt=0; ievt<n_evts; ievt++) {
+      
       if (!useEvent(ievt,skipEvents)) continue ;
       TBPerfInfo->GetEntry(ievt) ;
 
@@ -733,16 +734,16 @@ int main(int argc, char ** argv) {
               }
               mCtr++ ; 
           }
-          
+
           incPathTimer.at(pCtr) += addedPathTime ;
           pathTime.at(pCtr)->Fill( 1000. * modifyPathTime(*pathIter,skipTiming) ) ; 
           incPathTime.at(pCtr)->Fill( 1000. * addedPathTime ) ; 
 
           if (pathIter->status().accept()) {
               pathSuccess.at(pCtr)++ ;
-              successPerEvent.at(pCtr) = true ; 
+              successPerEvent.at(pCtr) = true ;
           } else { //--- One of the modules caused the path to fail ---//
-              successPerEvent.at(pCtr) = false ; 
+              successPerEvent.at(pCtr) = false ;
               failures.at(pCtr).at(pathIter->status().index())++ ;
           }
           pCtr++ ;
@@ -777,7 +778,7 @@ int main(int argc, char ** argv) {
               HLTPerformance.findModule( skipTiming.at(i).c_str() ) ; 
           if ( mod != HLTPerformance.endModules() ) modifiedTotalTime -= mod->time() ;
       }
-      totalTime->Fill( 1000. * modifiedTotalTime ) ; 
+      totalTime->Fill( 1000. * modifiedTotalTime ) ;
   }
 
   pCtr = 0 ;
@@ -851,8 +852,12 @@ int main(int argc, char ** argv) {
                                       100. * double(uniquePathSuccess.at(i))/(n_evts-nSkippedEvts)) ; 
       
       for (unsigned int j=0; j<pathTimer.size(); j++) {
-          pathVsPathSummary->Fill( double(i), double(j),
-                                   double(successPathVsPath.at(i).at(j))/double(pathSuccess.at(i)) ) ; 
+          if (pathSuccess.at(i) > 0) {
+              pathVsPathSummary->Fill( double(i), double(j),
+                                       double(successPathVsPath.at(i).at(j))/double(pathSuccess.at(i)) ) ; 
+          } else {
+              pathVsPathSummary->Fill( double(i), double(j), 0.) ; 
+          }
       }
   }
 

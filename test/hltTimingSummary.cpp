@@ -75,8 +75,11 @@ double modifyPathTime(HLTPerformanceInfo::Path path,
     double newTime = path.time() ;
     for (HLTPerformanceInfo::Path::const_iterator modIter=path.begin();
          modIter!=path.end(); modIter++) {
-        if (!useModule(*modIter,modList)) //{
-            newTime -= modIter->time() ;
+        if (!useModule(*modIter,modList)) {
+            //--- Check that the module runs in the path ---//
+            if (modIter->indexInPath(path) <= int(path.status().index()))
+                newTime -= modIter->time() ;
+        }
     }
     return newTime ;
 }
@@ -401,17 +404,14 @@ int main(int argc, char ** argv) {
   std::vector<TH1D*> pathTime ;
   std::vector<TH1D*> moduleTime ; 
   std::vector<TH1D*> moduleScaledTime ; 
-  std::vector< std::vector<TH1D*> > moduleInPathTime ;  
   std::vector< std::vector<TH1D*> > moduleInPathScaledTime ;  
   std::vector<TH1D*> incPathTime ; 
-  std::vector<TH1D*> moduleInPathTimeSummary ; 
   std::vector<TH1D*> moduleInPathScaledTimeSummary ; 
   std::vector<TH1D*> failedModule ; 
   std::vector<TH1D*> moduleInPathRejection ; 
   std::vector<TH1D*> moduleInPathRejectAll ; 
   std::vector<TH1D*> moduleInPathRejectTime ; 
-  std::vector<TH1D*> moduleInitTH1D_1 ; 
-  std::vector<TH1D*> moduleInitTH1D_2 ; 
+  std::vector<TH1D*> moduleInitTH1D ; 
 
   //--- Initial loop to get scale for histograms ---//
   double maxTime = 0. ;
@@ -576,14 +576,6 @@ int main(int argc, char ** argv) {
       histo->GetXaxis()->SetBinLabel(1,"SUCCESS") ; 
       failedModule.push_back( histo ) ; 
 
-      sprintf(name,"moduleInPathTimeSummary_%s",pathIter->name().c_str()) ;
-      sprintf(title,"Average time per module for path %s",pathIter->name().c_str()) ;
-      histo = new TH1D(name,title,
-                       (getNumberOfPathModules(*pathIter,skipTiming)),0.,
-                       double(getNumberOfPathModules(*pathIter,skipTiming))) ; 
-      histo->GetYaxis()->SetTitle("msec") ; 
-      moduleInPathTimeSummary.push_back( histo ) ; 
-
       sprintf(name,"moduleInPathScaledTimeSummary_%s",pathIter->name().c_str()) ;
       sprintf(title,"Average module RUNNING time for path %s",
               pathIter->name().c_str()) ;
@@ -621,28 +613,19 @@ int main(int argc, char ** argv) {
       for (HLTPerformanceInfo::Path::const_iterator modIter=pathIter->begin();
            modIter!=pathIter->end(); modIter++) {
 
-          sprintf(name,"moduleInPathTime_%s_%s",
-                  pathIter->name().c_str(),modIter->name().c_str()) ;
-          sprintf(title,"Per event time for module %s in path %s",
-                  modIter->name().c_str(),pathIter->name().c_str()) ;
-          histo = new TH1D(name,title,100,xmin,xmax) ; 
-          histo->GetXaxis()->SetTitle("msec") ; 
-          moduleInitTH1D_1.push_back( histo ) ; 
-
           sprintf(name,"moduleInPathScaledTime_%s_%s",
                   pathIter->name().c_str(),modIter->name().c_str()) ;
           sprintf(title,"Per event RUNNING time for module %s in path %s",
                   modIter->name().c_str(),pathIter->name().c_str()) ;
           histo = new TH1D(name,title,100,xmin,xmax) ;
           histo->GetXaxis()->SetTitle("msec") ;
-          moduleInitTH1D_2.push_back( histo ) ; 
+          moduleInitTH1D.push_back( histo ) ; 
           
           moduleInitDouble.push_back(0.) ; 
           moduleInitInt.push_back(0) ;
 
           const char* modName = modIter->name().c_str() ;
           if (useModule(*modIter,skipTiming)) {
-              moduleInPathTimeSummary[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathScaledTimeSummary[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathRejection[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathRejectAll[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
@@ -656,12 +639,10 @@ int main(int argc, char ** argv) {
       moduleInPathRunStats.push_back( moduleInitInt ) ; 
       moduleInPathTimer.push_back( moduleInitDouble ) ;
       failures.push_back( moduleInitInt ) ;
-      moduleInPathTime.push_back( moduleInitTH1D_1 ) ; 
-      moduleInPathScaledTime.push_back( moduleInitTH1D_2 ) ; 
+      moduleInPathScaledTime.push_back( moduleInitTH1D ) ; 
       moduleInitDouble.clear() ; 
       moduleInitInt.clear() ;
-      moduleInitTH1D_1.clear() ; 
-      moduleInitTH1D_2.clear() ; 
+      moduleInitTH1D.clear() ; 
   }
 
   for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
@@ -722,13 +703,13 @@ int main(int argc, char ** argv) {
           for (HLTPerformanceInfo::Path::const_iterator modIter=pathIter->begin();
                modIter!=pathIter->end(); modIter++) {
 
-              moduleInPathTime.at(pCtr).at(mCtr)->Fill(1000. * modIter->time()) ; 
-              moduleInPathTimer.at(pCtr).at(mCtr) += modIter->time() ;  
               if ( modIter->indexInPath(*pathIter) <= int(pathIter->status().index()) ) {
                   moduleInPathRunStats.at(pCtr).at(mCtr)++ ;
+                  moduleInPathTimer.at(pCtr).at(mCtr) += modIter->time() ;  
                   moduleInPathScaledTime.at(pCtr).at(mCtr)->Fill(1000. * modIter->time()) ; 
               }
               if ( useModule(*modIter,skipTiming) &&
+                   (modIter->indexInPath(*pathIter) <= int(pathIter->status().index())) &&
                    (HLTPerformance.uniqueModule(modIter->name().c_str())) ) {
                   addedPathTime += modIter->time() ; 
               }
@@ -792,15 +773,11 @@ int main(int argc, char ** argv) {
            modIter!=pathIter->end(); modIter++) {
 
           //--- Times are in msec ---//
-          double avgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr)/double(n_evts - nSkippedEvts) ;
           double scaledAvgModuleTime = -1 ; 
           if (moduleInPathRunStats.at(pCtr).at(mCtr) > 0)
               scaledAvgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr) /
                   double(moduleInPathRunStats.at(pCtr).at(mCtr)) ; 
           
-          if (useModule(*modIter,skipTiming))
-              moduleInPathTimeSummary.at(pCtr)->Fill( double(mIdx), avgModuleTime ) ;
-              
           //--- Calculate the rejection factor for each module in path, ---//
           //--- defined as N(HLT input)/N(HLT accept) ---//
           double modReject = 0 ;
@@ -884,6 +861,7 @@ int main(int argc, char ** argv) {
       pathTimeSummary->SetMinimum(0.) ; 
       incPathTimeSummary->SetMinimum(0.) ; 
       pathSuccessFraction->SetMinimum(0.) ; 
+      pathRejection->SetMinimum(0.) ; 
       moduleTimeSummary->SetMinimum(0.) ; 
       moduleScaledTimeSummary->SetMinimum(0.) ; 
 
@@ -891,7 +869,6 @@ int main(int argc, char ** argv) {
       for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
            pathIter!=HLTPerformance.endPaths(); pathIter++) {
           failedModule.at(pCtr)->SetMinimum(0.) ; 
-          moduleInPathTimeSummary.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathScaledTimeSummary.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathRejection.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathRejectAll.at(pCtr)->SetMinimum(0.) ; 
@@ -967,23 +944,6 @@ int main(int argc, char ** argv) {
       }
       createTOC(pdf,tocList) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
-          tocEntry = "Per event module (in path) time" ;
-          sprintf(tocPage,"%d",pageNumber) ; 
-          tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
-          for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
-               pathIter!=HLTPerformance.endPaths(); pathIter++) {
-              std::string subEntry = pathIter->name() ; 
-              sprintf(tocPage,"%d",pageNumber) ;
-              tocList.push_back( tocEntry + "^" + subEntry + "^^" + std::string(tocPage) ) ; 
-              for (HLTPerformanceInfo::Path::const_iterator modIter=pathIter->begin();
-                   modIter!=pathIter->end(); modIter++) {
-                  if (!useModule(*modIter,skipTiming)) continue ;  
-                  subEntry = pathIter->name() + "^" + modIter->name() ;
-                  sprintf(tocPage,"%d",pageNumber++) ;
-                  tocList.push_back( tocEntry + "^" + subEntry + "^^" + std::string(tocPage) ) ; 
-              }
-          }
-          createTOC(pdf,tocList) ; 
           tocEntry = "Per event module (in path) running time" ;
           sprintf(tocPage,"%d",pageNumber) ; 
           tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
@@ -1021,16 +981,6 @@ int main(int argc, char ** argv) {
       tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
       createTOC(pdf,tocList) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
-          tocEntry = "Average module (in path) time" ;
-          sprintf(tocPage,"%d",pageNumber) ; 
-          tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
-          for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
-               pathIter!=HLTPerformance.endPaths(); pathIter++) {
-              std::string subEntry = pathIter->name() ;
-              sprintf(tocPage,"%d",pageNumber++) ;
-              tocList.push_back( tocEntry + "^" + subEntry + "^^" + std::string(tocPage) ) ; 
-          }
-          createTOC(pdf,tocList) ; 
           tocEntry = "Average module (in path) running time" ;
           sprintf(tocPage,"%d",pageNumber) ; 
           tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
@@ -1109,7 +1059,6 @@ int main(int argc, char ** argv) {
       plotMany(moduleTime,c1,Module,HLTPerformance,skipTiming) ;
       plotMany(moduleScaledTime,c1,Module,HLTPerformance,skipTiming) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
-          plotModuleInPath(moduleInPathTime,c1,HLTPerformance,skipTiming) ; 
           plotModuleInPath(moduleInPathScaledTime,c1,HLTPerformance,skipTiming) ; 
       }
       //--- Average time (summary) plots ---//
@@ -1120,7 +1069,6 @@ int main(int argc, char ** argv) {
       plot1D(moduleTimeSummary,c1) ; 
       plot1D(moduleScaledTimeSummary,c1) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
-          plotMany(moduleInPathTimeSummary,c1,Path,HLTPerformance,skipTiming) ;
           plotMany(moduleInPathScaledTimeSummary,c1,Path,HLTPerformance,skipTiming) ;
       }
       //--- Success/Rejection plots ---//

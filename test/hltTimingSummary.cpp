@@ -16,7 +16,7 @@
 #include <fstream>
 #include <string>
 
-#include "DataFormats/Common/interface/EventAuxiliary.h"
+#include "DataFormats/Common/interface/EventAux.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
 #include "FWCore/FWLite/src/AutoLibraryLoader.h"
 

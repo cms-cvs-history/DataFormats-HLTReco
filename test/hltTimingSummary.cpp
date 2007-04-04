@@ -406,6 +406,7 @@ int main(int argc, char ** argv) {
   std::vector<TH1D*> moduleScaledTime ; 
   std::vector< std::vector<TH1D*> > moduleInPathScaledTime ;  
   std::vector<TH1D*> incPathTime ; 
+  std::vector<TH1D*> moduleInPathTimeSummary ; 
   std::vector<TH1D*> moduleInPathScaledTimeSummary ; 
   std::vector<TH1D*> failedModule ; 
   std::vector<TH1D*> moduleInPathRejection ; 
@@ -576,6 +577,15 @@ int main(int argc, char ** argv) {
       histo->GetXaxis()->SetBinLabel(1,"SUCCESS") ; 
       failedModule.push_back( histo ) ; 
 
+      sprintf(name,"moduleInPathTimeSummary_%s",pathIter->name().c_str()) ;
+      sprintf(title,"Average module time for path %s",
+              pathIter->name().c_str()) ;
+      histo = new TH1D(name,title,
+                       (getNumberOfPathModules(*pathIter,skipTiming)),0.,
+                       double(getNumberOfPathModules(*pathIter,skipTiming))) ; 
+      histo->GetYaxis()->SetTitle("msec") ; 
+      moduleInPathTimeSummary.push_back( histo ) ; 
+      
       sprintf(name,"moduleInPathScaledTimeSummary_%s",pathIter->name().c_str()) ;
       sprintf(title,"Average module RUNNING time for path %s",
               pathIter->name().c_str()) ;
@@ -626,6 +636,7 @@ int main(int argc, char ** argv) {
 
           const char* modName = modIter->name().c_str() ;
           if (useModule(*modIter,skipTiming)) {
+              moduleInPathTimeSummary[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathScaledTimeSummary[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathRejection[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
               moduleInPathRejectAll[pCtr]->GetXaxis()->SetBinLabel(mIdx,modName) ;
@@ -774,10 +785,12 @@ int main(int argc, char ** argv) {
 
           //--- Times are in msec ---//
           double scaledAvgModuleTime = -1 ; 
+          double avgModuleTime = 0. ; 
           if (moduleInPathRunStats.at(pCtr).at(mCtr) > 0)
               scaledAvgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr) /
                   double(moduleInPathRunStats.at(pCtr).at(mCtr)) ; 
-          
+          avgModuleTime = 1000. * moduleInPathTimer.at(pCtr).at(mCtr) / double(n_evts-nSkippedEvts) ; 
+
           //--- Calculate the rejection factor for each module in path, ---//
           //--- defined as N(HLT input)/N(HLT accept) ---//
           double modReject = 0 ;
@@ -792,6 +805,7 @@ int main(int argc, char ** argv) {
 
           //--- Calculate rejection per unit time for each module in path ---//
           if (useModule(*modIter,skipTiming)) {
+              moduleInPathTimeSummary.at(pCtr)->Fill( double(mIdx), avgModuleTime ) ; 
               moduleInPathScaledTimeSummary.at(pCtr)->Fill( double(mIdx), scaledAvgModuleTime ) ; 
               moduleInPathRejectTime.at(pCtr)->Fill( double(mIdx),
                                                      modReject / scaledAvgModuleTime ) ; 
@@ -869,6 +883,7 @@ int main(int argc, char ** argv) {
       for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
            pathIter!=HLTPerformance.endPaths(); pathIter++) {
           failedModule.at(pCtr)->SetMinimum(0.) ; 
+          moduleInPathTimeSummary.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathScaledTimeSummary.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathRejection.at(pCtr)->SetMinimum(0.) ; 
           moduleInPathRejectAll.at(pCtr)->SetMinimum(0.) ; 
@@ -981,6 +996,16 @@ int main(int argc, char ** argv) {
       tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
       createTOC(pdf,tocList) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
+          tocEntry = "Average module (in path) time" ;
+          sprintf(tocPage,"%d",pageNumber) ; 
+          tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
+          for (HLTPerformanceInfo::PathList::const_iterator pathIter=HLTPerformance.beginPaths();
+               pathIter!=HLTPerformance.endPaths(); pathIter++) {
+              std::string subEntry = pathIter->name() ;
+              sprintf(tocPage,"%d",pageNumber++) ;
+              tocList.push_back( tocEntry + "^" + subEntry + "^^" + std::string(tocPage) ) ; 
+          }
+          createTOC(pdf,tocList) ; 
           tocEntry = "Average module (in path) running time" ;
           sprintf(tocPage,"%d",pageNumber) ; 
           tocList.push_back( tocEntry + "^^" + std::string(tocPage) ) ; 
@@ -1069,6 +1094,7 @@ int main(int argc, char ** argv) {
       plot1D(moduleTimeSummary,c1) ; 
       plot1D(moduleScaledTimeSummary,c1) ; 
       if (HLTPerformance.numberOfPaths() > 1) {
+          plotMany(moduleInPathTimeSummary,c1,Path,HLTPerformance,skipTiming) ;
           plotMany(moduleInPathScaledTimeSummary,c1,Path,HLTPerformance,skipTiming) ;
       }
       //--- Success/Rejection plots ---//

@@ -897,6 +897,7 @@ int main(int argc, char ** argv) {
       
       gROOT->SetStyle("Plain") ; 
       gStyle->SetPalette(1) ; 
+      gStyle->SetOptStat(111111) ;
       c1->UseCurrentStyle() ; 
       gROOT->ForceStyle() ;
 

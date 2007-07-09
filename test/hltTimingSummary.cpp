@@ -422,8 +422,8 @@ void createTOCentry(TPDF* pdf, std::string tocEntry, int& page,
 int main(int argc, char ** argv) {
     
     // Debugging/optimization utilities
-    edm::CPUTimer myTimer ;
-    myTimer.reset() ; myTimer.start() ; 
+//     edm::CPUTimer myTimer ;
+//     myTimer.reset() ; myTimer.start() ; 
     
     //-- Load libraries ---//
     gSystem->Load("libFWCoreFWLite") ;

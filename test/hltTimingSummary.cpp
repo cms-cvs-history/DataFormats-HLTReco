@@ -123,7 +123,7 @@ double calculateMiPTime(std::vector<double> modTimes,
                         int mipIndex,
                         int mIdx) {
 
-    double time = 0. ;
+    double time = -1. ;
     if (mipIndex >= 0) // Assures us that the module is in the path
         if ( (pathStatus == -1.) || (pathStatus >= double(mIdx)) )
             time = modTimes.at(mipIndex) ;
@@ -1093,6 +1093,10 @@ int main(int argc, char ** argv) {
 
         if (!useEvent(ievt,reducedSkipEvents)) continue ; 
         totalTime->Fill( 1000. * eventTime.at(ievt) ) ;
+
+        // Vector to determine which modules actually ran in the event
+        std::vector<bool> moduleRan(numberOfModules,false) ; 
+
         for (unsigned int i=0; i<unsigned(numberOfPaths); i++) {
             double eventPathTime = 0. ; double eventIncPathTime = 0. ;
 
@@ -1100,8 +1104,9 @@ int main(int argc, char ** argv) {
                 double mipTime = calculateMiPTime(eventModuleTime.at(ievt),
                                                   eventPathStatus.at(ievt).at(i),
                                                   globalModuleInPathMapper.at(i).at(j),j) ;
-                if (mipTime > 0) {
+                if (mipTime >= 0) {
                     eventPathTime += mipTime ;
+                    moduleRan.at(unsigned(globalModuleInPathMapper.at(i).at(j))) = true ; 
                     moduleInPathScaledTime.at(i).at(j)->Fill( 1000. * mipTime ) ; 
                     if (uniqueModule.at(i).at(j)) eventIncPathTime += mipTime ;
                 }  
@@ -1125,7 +1130,8 @@ int main(int argc, char ** argv) {
         }
         for (int i=0; i<numberOfModules; i++) {
             moduleTime.at(i)->Fill( 1000. * eventModuleTime.at(ievt).at(i) ) ;
-            if (eventModuleTime.at(ievt).at(i) > 0)
+            // if (eventModuleTime.at(ievt).at(i) > 0)
+            if (moduleRan.at(i))
                 moduleScaledTime.at(i)->Fill( 1000. * eventModuleTime.at(ievt).at(i) ) ;
         }
     }

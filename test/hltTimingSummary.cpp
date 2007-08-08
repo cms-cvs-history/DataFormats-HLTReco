@@ -653,7 +653,8 @@ int main(int argc, char ** argv) {
     std::vector<int> skipEvents ; 
   
     //--- Variables used to set the scale for histograms ---//
-    double longestEventTime = 0. ; 
+    double longestEventTime = 0. ;
+    int longestEvent = -1 ; 
     double sumTime = 0. ; double sumTimeSq = 0. ; 
     double xmin = 0. ; double xmax = 0. ;
 
@@ -680,6 +681,9 @@ int main(int argc, char ** argv) {
     std::vector< std::vector<int> > globalModuleInPathMapper ; 
     std::vector< std::vector<double> > moduleInPathTimeSummaryVector ; 
     std::vector<double> moduleIn ; 
+
+    std::vector<double> longestEventTimeByModule ; 
+    std::vector<int> longestEventByModule ; 
     
     std::vector<int> pathFilterModule ; 
 
@@ -707,6 +711,8 @@ int main(int argc, char ** argv) {
             incPathTimeSummaryVector.resize(numberOfPaths,0.) ; 
             moduleTimeSummaryVector.resize(numberOfModules,0.) ; 
             moduleIn.resize(numberOfModules,0.) ;
+            longestEventTimeByModule.resize(numberOfModules,0.) ;
+            longestEventByModule.resize(numberOfModules,-1) ;
             pathFilterModule.resize(numberOfPaths,-1) ;
 
             // Event vectors...all have MODIFIED module, path structure
@@ -836,11 +842,20 @@ int main(int argc, char ** argv) {
                 moduleTimeSummaryVector.at(mIdx) += modIter->time() ; 
                 eventModuleTime.at(ievt).at(mIdx) = modIter->time() ; 
                 eventTime.at(ievt) += modIter->time() ; // Calculate total time from used modules
+                // Determine the event where a given module took the most time
+                if ((1000.*modIter->time()) > longestEventTimeByModule.at(mIdx)) {
+                    longestEventTimeByModule.at(mIdx) = 1000.*modIter->time() ;
+                    longestEventByModule.at(mIdx) = ievt ;
+                }
                 mIdx++ ; 
             }
         }
 
-        if (eventTime.at(ievt) > longestEventTime) longestEventTime = eventTime.at(ievt) ;
+        if (eventTime.at(ievt) > longestEventTime) {
+            longestEventTime = eventTime.at(ievt) ;
+            longestEvent = ievt ;
+        }
+        
         sumTime += eventTime.at(ievt) ;
         sumTimeSq += eventTime.at(ievt) * eventTime.at(ievt) ; 
     }
@@ -1154,8 +1169,15 @@ int main(int argc, char ** argv) {
         sumfile << std::endl ; 
         if (skipFirstEvent) {
             sumfile << "Skipping " << reducedSkipEvents.size()
-                    << " events where a module was run for the first time." << std::endl ;
-            sumfile << std::endl ;
+                    << " event(s) due to module initialization:" << std::endl ;
+            sumfile << "Event" ;
+            if (reducedSkipEvents.size() > 1) sumfile << "s" ; 
+            for (unsigned int i=0; i<reducedSkipEvents.size(); i++) {
+                if (i != 0) sumfile << "," ;
+                sumfile << " " << reducedSkipEvents.at(i) ;
+            }
+            sumfile << std::endl ; 
+            sumfile << std::endl ; 
         }
         if (skipTiming.size() > 0) {
             sumfile << "Not including any information from the following excluded modules: " << std::endl ;
@@ -1192,9 +1214,11 @@ int main(int argc, char ** argv) {
                     << value << " msec" ;
             sumfile << std::endl ; 
         }
-      
+        sumfile << std::endl ; 
+        
         sprintf(value,"%9.4f",(1000.*longestEventTime)) ; 
-        sumfile << "The slowest event took " << value << " msec" << std::endl ;
+        sumfile << "The slowest event (" << longestEvent
+                << ") took " << value << " msec" << std::endl ;
         sumfile << std::endl ; 
 
 
@@ -1249,6 +1273,17 @@ int main(int argc, char ** argv) {
         }
         sumfile << std::endl ;
 
+        sumfile << "A given module took the longest time to run in the following events:" << std::endl ;
+        for (unsigned int i=0; i<unsigned(numberOfModules); i++) {
+            if (longestEventTimeByModule.at(i) > 0) {
+                sprintf(value,"%9.4f",longestEventTimeByModule.at(i)) ; 
+                sumfile << "Module " << moduleNames.at(i)
+                        << " was slowest in event " << longestEventByModule.at(i)
+                        << ", with time: " << value << " msec" << std::endl ;
+            }
+        }
+        sumfile << std::endl ; 
+        
         sumfile << "Timing histograms run from " << xmin << " to " << xmax << " msec" ;
         if (userMaxTime > 0) sumfile << ", which was specified by the user" ;
         sumfile << std::endl ; 

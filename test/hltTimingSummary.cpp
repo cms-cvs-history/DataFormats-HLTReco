@@ -118,6 +118,12 @@ void initialize(HLTPerformanceInfo hltPerf,
     }
 }
 
+double getTime(HLTPerformanceInfo::Module mod, bool useCPU) {
+
+    if (useCPU) return mod.cputime() ;
+    return mod.time() ; 
+}
+
 double calculateMiPTime(std::vector<double> modTimes,
                         double pathStatus,
                         int mipIndex,
@@ -171,51 +177,101 @@ bool isFilterModule(HLTPerformanceInfo::Module module,
 
 void plot1D(TH1D* histo, TCanvas* canvas, bool doPlot) {
 
-    double defaultSize = 0.04 ; 
-    double defaultMargin = 0.10 ;
-    canvas->SetBottomMargin(defaultMargin) ; 
-    gStyle->SetLabelSize(defaultSize,"x") ; 
-    double newSize = 0.5 / double(histo->GetNbinsX()) ;
+    // Standard 1D defaults
+    double defaultSize   = 0.04 ; 
+    double defaultMargin = 0.10 ; 
 
+    histo->SetLabelSize(defaultSize) ; 
+    canvas->SetBottomMargin(defaultMargin) ; 
+
+    // Try to calculate new size...
+    double realXsize = canvas->GetXsizeReal() *
+        (1.0 - (canvas->GetLeftMargin() + canvas->GetRightMargin())) ; 
+    double realYsize = canvas->GetYsizeReal() *
+        (1.0 - (canvas->GetTopMargin() + canvas->GetBottomMargin())) ;
+
+    double realBinSize = realXsize / double(histo->GetNbinsX()) ;
+    double realBinAsYfraction = realBinSize / realYsize ;
+    double newSize = realBinAsYfraction * 0.90 ; 
+    
     THashList* hLabels = histo->GetXaxis()->GetLabels() ;
-    if ((defaultSize > newSize)&&(hLabels!=0)) {
-        gStyle->SetLabelSize(newSize,"x") ; 
+    if (hLabels!=0) {
+        double charSize = std::min(defaultSize,newSize) ;        
         histo->LabelsOption("v","x") ;
         //--- Loop through the bins to get the largest bin name size ---//
-        double maxSize = defaultMargin ; 
-        for (int i=1; i<=histo->GetNbinsX(); i++) {
-            std::string label = histo->GetXaxis()->GetBinLabel(i) ;
-            double labelSize = 0.33 * label.size() * defaultSize ;
-            if (labelSize > maxSize) maxSize = labelSize ;
+        int nIter = 0 ; 
+        bool properMargin = false ;
+        double maxSize = defaultMargin ;
+        while (!properMargin) {
+            nIter++ ; 
+            for (int i=1; i<=histo->GetNbinsX(); i++) {
+                std::string label = histo->GetXaxis()->GetBinLabel(i) ;
+                double labelSize = 0.40 * label.size() * charSize ;
+                if (labelSize > maxSize) maxSize = labelSize ;
+            }
+            properMargin = true ; 
+            if ((nIter < 10)&&(maxSize > 0.65)) {
+                properMargin = false ;
+                charSize = charSize*0.95 ;
+                maxSize = defaultMargin ; 
+            }
         }
+
+        histo->SetLabelSize(charSize,"X") ;
         canvas->SetBottomMargin(maxSize) ; 
     }
 
     if (doPlot) {
-        histo->Draw() ; canvas->Update() ;
+        histo->Draw() ;
+        canvas->Update() ;        
     }
 }
 
 void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot) {
 
-    double defaultSize = 0.04 ; 
-    double defaultMargin = 0.10 ;
+    // Standard 1D defaults
+    double defaultSize   = 0.04 ; 
+    double defaultMargin = 0.10 ; 
+
+    h1->SetLabelSize(defaultSize) ; 
+    h2->SetLabelSize(defaultSize) ; 
     canvas->SetBottomMargin(defaultMargin) ; 
-    gStyle->SetLabelSize(defaultSize,"x") ; 
-    double newSize = 0.5 / double(h1->GetNbinsX()) ; 
+
+    // Try to calculate new size...
+    double realXsize = canvas->GetXsizeReal() *
+        (1.0 - (canvas->GetLeftMargin() + canvas->GetRightMargin())) ; 
+    double realYsize = canvas->GetYsizeReal() *
+        (1.0 - (canvas->GetTopMargin() + canvas->GetBottomMargin())) ;
+
+    double realBinSize = realXsize / double(h1->GetNbinsX()) ;
+    double realBinAsYfraction = realBinSize / realYsize ;
+    double newSize = realBinAsYfraction * 0.90 ; 
 
     THashList* hLabels = h1->GetXaxis()->GetLabels() ; 
-    if ((defaultSize > newSize)&&(hLabels!=0)) {
-        gStyle->SetLabelSize(newSize,"x") ; 
+    if (hLabels!=0) {
+        double charSize = std::min(defaultSize,newSize) ;
         h1->LabelsOption("v","x") ;
         h2->LabelsOption("v","x") ;
         //--- Loop through the bins to get the largest bin name size ---//
-        double maxSize = defaultMargin ; 
-        for (int i=1; i<=h1->GetNbinsX(); i++) {
-            std::string label = h1->GetXaxis()->GetBinLabel(i) ;
-            double labelSize = 0.35 * label.size() * defaultSize ;
-            if (labelSize > maxSize) maxSize = labelSize ; 
+        int nIter = 0 ; 
+        bool properMargin = false ;
+        double maxSize = defaultMargin ;
+        while (!properMargin) {
+            nIter++ ; 
+            for (int i=1; i<=h1->GetNbinsX(); i++) {
+                std::string label = h1->GetXaxis()->GetBinLabel(i) ;
+                double labelSize = 0.40 * label.size() * charSize ;
+                if (labelSize > maxSize) maxSize = labelSize ;
+            }
+            properMargin = true ; 
+            if ((nIter < 10)&&(maxSize > 0.65)) {
+                properMargin = false ;
+                charSize = charSize*0.95 ;
+                maxSize = defaultMargin ; 
+            }
         }
+        h1->SetLabelSize(charSize,"X") ;
+        h2->SetLabelSize(charSize,"X") ;
         canvas->SetBottomMargin(maxSize) ; 
     }
 
@@ -229,6 +285,80 @@ void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot) {
 void plot2D(TH2D* histo, TCanvas* canvas, bool doPlot) {
     histo->SetMaximum(1.) ; histo->SetMinimum(0.) ;
     histo->SetStats(kFALSE) ; 
+
+    // Defaults
+    double defaultXsize = 0.04 ; 
+    double defaultYsize = 0.04 ; 
+    double defaultLeftMargin   = 0.10 ; 
+    double defaultBottomMargin = 0.10 ; 
+
+    histo->SetLabelSize(defaultXsize,"X") ; 
+    histo->SetLabelSize(defaultYsize,"Y") ; 
+    canvas->SetLeftMargin(defaultLeftMargin) ; 
+    canvas->SetBottomMargin(defaultBottomMargin) ; 
+
+    // Try to calculate new size...
+    double realXsize = canvas->GetXsizeReal() *
+        (1.0 - (canvas->GetLeftMargin() + canvas->GetRightMargin())) ; 
+    double realYsize = canvas->GetYsizeReal() *
+        (1.0 - (canvas->GetTopMargin() + canvas->GetBottomMargin())) ;
+
+    double realXbinSize = realXsize / double(histo->GetNbinsX()) ;
+    double realXbinAsYfraction = realXbinSize / realYsize ;
+    double newXsize = realXbinAsYfraction * 0.90 ; 
+
+    double realYbinSize = realXsize / double(histo->GetNbinsY()) ;
+    double realYbinAsXfraction = realYbinSize / realXsize ;
+    double newYsize = realYbinAsXfraction * 0.90 ; 
+
+    THashList* hLabels = histo->GetXaxis()->GetLabels() ; 
+    if (hLabels!=0) {
+
+        double xCharSize = std::min(defaultXsize,newXsize) ;
+        double yCharSize = std::min(defaultYsize,newYsize) ;
+        histo->LabelsOption("v","x") ;
+        //--- Loop through the bins to get the largest bin name size ---//
+        int nIter = 0 ; 
+        bool properMargin = false ;
+        double xMaxSize = defaultBottomMargin ;
+        while (!properMargin) {
+            nIter++ ; 
+            for (int i=1; i<=histo->GetNbinsX(); i++) {
+                std::string label = histo->GetXaxis()->GetBinLabel(i) ;
+                double labelSize = 0.40 * label.size() * xCharSize ;
+                if (labelSize > xMaxSize) xMaxSize = labelSize ;
+            }
+            properMargin = true ; 
+            if ((nIter < 10)&&(xMaxSize > 0.65)) {
+                properMargin = false ;
+                xCharSize = xCharSize*0.95 ;
+                xMaxSize = defaultBottomMargin ; 
+            }
+        }
+
+        nIter = 0 ; properMargin = false ;
+        double yMaxSize = defaultLeftMargin ; 
+        while (!properMargin) {
+            nIter++ ; 
+            for (int i=1; i<=histo->GetNbinsX(); i++) {
+                std::string label = histo->GetXaxis()->GetBinLabel(i) ;
+                double labelSize = 0.40 * label.size() * yCharSize ;
+                if (labelSize > yMaxSize) yMaxSize = labelSize ;
+            }
+            properMargin = true ; 
+            if ((nIter < 10)&&(yMaxSize > 0.65)) {
+                properMargin = false ;
+                yCharSize = yCharSize*0.95 ;
+                yMaxSize = defaultLeftMargin ; 
+            }
+        }
+
+        histo->SetLabelSize(xCharSize,"X") ;
+        histo->SetLabelSize(yCharSize,"Y") ;
+        canvas->SetBottomMargin(xMaxSize) ; 
+        canvas->SetLeftMargin(yMaxSize) ; 
+    }
+
     if (doPlot) {
         histo->Draw("colz") ; canvas->Update() ;
     }
@@ -443,7 +573,8 @@ int main(int argc, char ** argv) {
     //--- Boolean flags ---//
     bool writePdf = true ;
     bool writeEventSection = true ;
-    bool writeSummary = false ; 
+    bool writeSummary = false ;
+    bool takeCPUtime = false ; 
   
     double userMaxTime = -1. ;
     double userBinWidth = -1. ; 
@@ -462,6 +593,8 @@ int main(int argc, char ** argv) {
          "Set the level of pdf verbosity: 0 (none), 1 (summary plots only), or 2 (full, default)")
         ("summary,s",
          "Creates user-friendly timing summary file <UserName>-summary.txt.  See \"-o\" option for <UserName>")
+        ("cpu,c",
+         "Results presented as CPU time (in msec).  Default is wall clock.")
         ("time,t",     boost::program_options::value<double>(),
          "All relevant histogram time axes run from 0 to <UserValue> (in msec)")
         ("bin,b",      boost::program_options::value<double>(),
@@ -534,6 +667,12 @@ int main(int argc, char ** argv) {
             std::cerr << desc << usage << std::endl ;
             return 1 ;
         }
+    }
+    if (vmap.count("cpu")) {
+        takeCPUtime = true ;
+        std::cout << "NOTE: You have elected to display results using CPU time." << std::endl ; 
+        std::cout << "      Due to resolution effects in CPUTimer, event histogram results " << std::endl ; 
+        std::cout << "      may not reflect reality.  **Use at your own risk**" << std::endl << std::endl ; 
     }
     if (vmap.count("time")) {
         userMaxTime = vmap["time"].as<double>() ; 
@@ -770,7 +909,9 @@ int main(int argc, char ** argv) {
             for (HLTPerformanceInfo::Modules::const_iterator modIter=HLTPerformance.beginModules();
                  modIter!=HLTPerformance.endModules(); modIter++) {
                 if (useModule.at(mCtr++)) {
-                    if (modIter->time() > 0) {
+                    // Due to the resolution problems with CPUTimer,
+                    // ALWAYS determine event skipping using wall clock time
+                    if (getTime((*modIter),false) > 0) {
                         if (skipEvents.at(mIdx) < 0) {
                             skipEvents.at(mIdx) = ievt ;
                             if (useThisEvent) nSkips++ ;
@@ -797,10 +938,10 @@ int main(int argc, char ** argv) {
                      modIter!=pathIter->end(); modIter++) {
                     if ( useModuleInPath.at(pCtr).at(mCtr) ) {                        
                         if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(pathIter->status().index())) {
-                            moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += modIter->time() ;
-                            pathTimeSummaryVector.at(pIdx) += modIter->time() ;
+                            moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += getTime((*modIter),takeCPUtime) ;
+                            pathTimeSummaryVector.at(pIdx) += getTime((*modIter),takeCPUtime) ;
                             if (uniqueModule.at(pIdx).at(mIdx))
-                                incPathTimeSummaryVector.at(pIdx) += modIter->time() ; 
+                                incPathTimeSummaryVector.at(pIdx) += getTime((*modIter),takeCPUtime) ; 
                             
                             // Determine success/failure
                             moduleInPathIn.at(pIdx).at(mIdx)++ ;
@@ -839,12 +980,12 @@ int main(int argc, char ** argv) {
         for (HLTPerformanceInfo::Modules::const_iterator modIter=HLTPerformance.beginModules();
              modIter!=HLTPerformance.endModules(); modIter++) {
             if (useModule.at(mCtr++)) {
-                moduleTimeSummaryVector.at(mIdx) += modIter->time() ; 
-                eventModuleTime.at(ievt).at(mIdx) = modIter->time() ; 
-                eventTime.at(ievt) += modIter->time() ; // Calculate total time from used modules
+                moduleTimeSummaryVector.at(mIdx) += getTime((*modIter),takeCPUtime) ; 
+                eventModuleTime.at(ievt).at(mIdx) = getTime((*modIter),takeCPUtime) ; 
+                eventTime.at(ievt) += getTime((*modIter),takeCPUtime) ; // Calculate total time from used modules
                 // Determine the event where a given module took the most time
-                if ((1000.*modIter->time()) > longestEventTimeByModule.at(mIdx)) {
-                    longestEventTimeByModule.at(mIdx) = 1000.*modIter->time() ;
+                if ((1000.*getTime((*modIter),takeCPUtime)) > longestEventTimeByModule.at(mIdx)) {
+                    longestEventTimeByModule.at(mIdx) = 1000.*getTime((*modIter),takeCPUtime) ;
                     longestEventByModule.at(mIdx) = ievt ;
                 }
                 mIdx++ ; 
@@ -994,7 +1135,7 @@ int main(int argc, char ** argv) {
   
     // Fill summary histograms
     for (unsigned int i=0; i<unsigned(numberOfPaths); i++) {
-        if (pathTimeSummaryVector.at(i) > 0) {
+        if (pathTimeSummaryVector.at(i) > 0.) {
             pathTimeSummary->Fill( double(i),
                                    (1000. * pathTimeSummaryVector.at(i)/double(numberOfEvents)) ) ;
         } else {
@@ -1167,6 +1308,13 @@ int main(int argc, char ** argv) {
         sumfile << "Input file: " << filename << std::endl ;
         sumfile << "Output root file name: " << outname << std::endl ;
         sumfile << std::endl ; 
+
+        if (takeCPUtime) {
+            sumfile << "NOTE: Results obtained using CPU time." << std::endl ; 
+            sumfile << "      Due to resolution effects in CPUTimer, event histograms may not reflect reality." << std::endl ; 
+            sumfile << "      Please be aware of these limitations when drawing your conclusions." << std::endl << std::endl ; 
+        }
+
         if (skipFirstEvent) {
             sumfile << "Skipping " << reducedSkipEvents.size()
                     << " event(s) due to module initialization:" << std::endl ;
@@ -1207,11 +1355,10 @@ int main(int argc, char ** argv) {
         }
       
         char value[10] ; 
-        sumfile << "Average path times are as follows: " << std::endl ;
+        sumfile << "Average path times are as follows (all in msec): " << std::endl ;
         for (int i=1; i<=pathTimeSummary->GetNbinsX(); i++) {
             sprintf(value,"%9.4f",pathTimeSummary->GetBinContent(i)) ; 
-            sumfile << "Path " << pathTimeSummary->GetXaxis()->GetBinLabel(i) << ": "
-                    << value << " msec" ;
+            sumfile << value << " (path " << pathTimeSummary->GetXaxis()->GetBinLabel(i) << ")" ;
             sumfile << std::endl ; 
         }
         sumfile << std::endl ; 
@@ -1379,7 +1526,7 @@ int main(int argc, char ** argv) {
             plot1D(moduleTimeSummary,c1,writePdf) ; 
             plot1D(moduleScaledTimeSummary,c1,writePdf) ;
         }
-      
+        
         if (HLTPerformance.numberOfPaths() > 1) {
             plotMany(moduleInPathTimeSummary,c1,writePdf) ;
             plotMany(moduleInPathScaledTimeSummary,c1,writePdf) ;
@@ -1388,7 +1535,7 @@ int main(int argc, char ** argv) {
             plot1D(pathTimeSummary,c1,writePdf) ; 
             plot1D(incPathTimeSummary,c1,writePdf) ; 
         }
-
+        
         //--- Success/Rejection plots ---//
         plot1D(pathRejection,pathRejectAll,c1,writePdf) ; 
         plot1D(pathSuccessFraction,c1,writePdf) ; 
@@ -1399,7 +1546,7 @@ int main(int argc, char ** argv) {
         plotMany(failedModule,c1,writePdf) ;
         plotMany(moduleInPathRejection,moduleInPathRejectAll,c1,writePdf) ;
         plotMany(moduleInPathRejectTime,c1,writePdf) ;
-
+        
         //--- Event timing ---//
         plotMany(moduleTime,c1,writeEventSection) ;
         plotMany(moduleScaledTime,c1,writeEventSection) ; 
@@ -1411,7 +1558,7 @@ int main(int argc, char ** argv) {
         if (HLTPerformance.numberOfPaths() > 1) {
             plotMany(incPathTime,c1,writeEventSection) ;
         }
-
+        
         if (writePdf) pdf->Close() ; 
     }
 

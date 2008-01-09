@@ -15,7 +15,7 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <math.h>
+#include <cmath>
 
 #include "DataFormats/Provenance/interface/EventAuxiliary.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"

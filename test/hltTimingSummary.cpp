@@ -1,7 +1,6 @@
 #include <TROOT.h>
 #include <TFile.h>
 #include <THashList.h>
-#include <TH1D.h>
 #include <TH2D.h>
 #include <TAttText.h>
 #include <TCanvas.h>
@@ -17,10 +16,8 @@
 #include <string>
 #include <cmath>
 
-#include "DataFormats/Provenance/interface/EventAuxiliary.h"
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
 #include "FWCore/FWLite/interface/AutoLibraryLoader.h"
-#include "FWCore/Utilities/interface/CPUTimer.h" 
 
 //--- Created by:  
 //--- Bryan Dahmes (Bryan.Michael.Dahmes@cern.ch), January 2007

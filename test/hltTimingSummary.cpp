@@ -560,9 +560,9 @@ int main(int argc, char ** argv) {
     //--- Default arguments ---//
     std::string filename = "hlt.root" ;
     std::string outbase  = "hltTimingSummary" ; 
-    std::string outname ;
-    std::string pdfname ;
-    std::string txtname ;
+    std::string outname = outbase + ".root" ;
+    std::string pdfname = outbase + ".pdf" ;
+    std::string txtname = outbase + "-bookmark.txt" ;
     std::string sumname ; 
     std::vector<std::string> skipTiming ; skipTiming.clear() ; 
     std::vector<std::string> squareOne ; squareOne.clear() ; 

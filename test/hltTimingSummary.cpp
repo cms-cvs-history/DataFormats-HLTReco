@@ -72,8 +72,8 @@ void initialize(HLTPerformanceInfo hltPerf,
       if (useModuleByName(modIter,skip)) {
 	pathMod.push_back( true ) ;
 	names.push_back( modIter.name() ) ;
-	// this no longer works I think 
-	//modIdx.push_back( modIter.indexInPath(*pathIter) ) ;
+	modIdx.push_back( hltPerf.moduleIndexInPath(modIter.name().c_str(),
+						    hltPerf.getPath(piter).name().c_str()) ) ;
 	onlyOne.push_back( hltPerf.uniqueModule(modIter.name().c_str()) ) ; 
 	ctr++ ; 
       } else {

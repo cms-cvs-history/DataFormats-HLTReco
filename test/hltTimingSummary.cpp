@@ -18,6 +18,7 @@
 
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
 #include "FWCore/FWLite/interface/AutoLibraryLoader.h"
+#include "DataFormats/Common/interface/Wrapper.h"
 
 //--- Created by:  
 //--- Bryan Dahmes (Bryan.Michael.Dahmes@cern.ch), January 2007
@@ -68,7 +69,7 @@ void initialize(HLTPerformanceInfo hltPerf,
     std::vector<int>  modIdx ;  modIdx.clear() ; 
     std::vector<bool> onlyOne ; onlyOne.clear() ;
     for ( size_t mm = 0; mm < hltPerf.getPath(piter).numberOfModules(); ++mm) {
-      HLTPerformanceInfo::Module & modIter=hltPerf.getModuleOnPath(mm, piter); 
+      const HLTPerformanceInfo::Module & modIter=hltPerf.getModuleOnPath(mm, piter); 
       if (useModuleByName(modIter,skip)) {
 	pathMod.push_back( true ) ;
 	names.push_back( modIter.name() ) ;
@@ -181,6 +182,7 @@ void plot1D(TH1D* histo, TCanvas* canvas, bool doPlot) {
 
   histo->SetLabelSize(defaultSize) ; 
   canvas->SetBottomMargin(defaultMargin) ; 
+  canvas->SetLeftMargin(defaultMargin) ; 
 
   // Try to calculate new size...
   double realXsize = canvas->GetXsizeReal() *
@@ -234,6 +236,7 @@ void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot) {
   h1->SetLabelSize(defaultSize) ; 
   h2->SetLabelSize(defaultSize) ; 
   canvas->SetBottomMargin(defaultMargin) ; 
+  canvas->SetLeftMargin(defaultMargin) ; 
 
   // Try to calculate new size...
   double realXsize = canvas->GetXsizeReal() *
@@ -758,13 +761,16 @@ int main(int argc, char ** argv) {
   while ( (cand = (TBranch*)iter()) ) {
     std::string branchName = cand->GetName() ;
     unsigned int loc = branchName.find( "HLTPerformanceInfo" ) ;
-    if ( loc != std::string::npos ) hltPerfInfoBranchName = branchName + "obj" ;
+    // Fixes proposed by Chris Jones and Dan Riley
+    if ( loc != std::string::npos ) hltPerfInfoBranchName = branchName ;
   }
-    
+
   TBranch* TBPerfInfo = events->GetBranch( hltPerfInfoBranchName.c_str() );
+  
   assert(TBPerfInfo);
-  HLTPerformanceInfo HLTPerformance ;
-  TBPerfInfo->SetAddress((void *) & HLTPerformance) ;
+  // Additions suggested by Chris Jones and Dan Riley
+  edm::Wrapper<HLTPerformanceInfo>* HLTPerformanceWrapper = 0 ;
+  TBPerfInfo->SetAddress((void *) & HLTPerformanceWrapper) ;
     
   //--- Prepare the output ---//
   TFile* outFile = new TFile(outname.c_str(), "recreate") ;
@@ -781,10 +787,10 @@ int main(int argc, char ** argv) {
     if ( writeSummary ) sumfile.open(sumname.c_str()) ; 
     if ( writePdf ) txtfile.open(txtname.c_str()) ; 
   }
-    
+
   int n_evts = events->GetEntries() ;
   // HACK for testing purposes
-  // n_evts = 100 ; 
+  // n_evts = 100 ;
     
   //--- Events to be skipped ---//
   std::vector<int> skipEvents ; 
@@ -827,7 +833,7 @@ int main(int argc, char ** argv) {
   //--- One loop through all events ---//
   bool init = false ; int nSkips = 0 ; 
   std::vector<double> eventTime(n_evts,0.) ;
-
+  
   for (int ievt=0; ievt<n_evts; ievt++) {
     // These count the true order of modules, paths
     int pCtr = 0 ; int mCtr = 0 ;
@@ -838,12 +844,12 @@ int main(int argc, char ** argv) {
     if (!init) {
       init = true ;
       TBPerfInfo->GetEntry(ievt) ;
-      initialize(HLTPerformance,skipTiming,
+      initialize((*(HLTPerformanceWrapper->product())),skipTiming,
 		 &useModule,&usePath,&useModuleInPath,
 		 &moduleNames,&pathNames,&moduleInPathNames,
 		 numberOfModules,numberOfPaths,&numberOfModulesInPath,
 		 &moduleIndexByPath,&uniqueModule,&globalModuleInPathMapper) ;
-            
+      
       pathTimeSummaryVector.resize(numberOfPaths,0.) ; 
       incPathTimeSummaryVector.resize(numberOfPaths,0.) ; 
       moduleTimeSummaryVector.resize(numberOfModules,0.) ; 
@@ -856,17 +862,18 @@ int main(int argc, char ** argv) {
       std::vector< std::vector<double> > dMiP ;
       std::vector<double> dMod(numberOfModules,-1.) ; 
       pCtr = 0 ; pIdx = 0 ; 
-      for (size_t piter = 0; piter < HLTPerformance.numberOfPaths(); ++piter) {
-	const HLTPerformanceInfo::Path p = HLTPerformance.getPath(piter);
+      
+      for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
+        HLTPerformanceInfo::Path p = (*HLTPerformanceWrapper)->getPath(piter) ;
 	if (usePath.at(pCtr)) {
 	  // Determine the index of the filter modules in each path
 	  if (squareOne.size() > 0) {
 	    mCtr = 0 ; mIdx = 0 ; 
 	    // loop over modules on path
-	    for (size_t i = 0; i < HLTPerformance.getPath(piter).numberOfModules(); 
+	    for (size_t i = 0; i < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); 
 		 ++i ) {
 	      const HLTPerformanceInfo::Module & myModule = 
-		HLTPerformance.getModule(HLTPerformance.getPath(piter).getModuleIndex(i)); 
+		(*HLTPerformanceWrapper)->getModule((*HLTPerformanceWrapper)->getPath(piter).getModuleIndex(i)); 
 	      if (useModuleInPath.at(pCtr).at(mCtr)) {
 		if (isFilterModule(myModule,squareOne)) {
 		  if (pathFilterModule.at(pIdx) >= 0) {
@@ -907,8 +914,8 @@ int main(int argc, char ** argv) {
     mCtr = 0 ; mIdx = 0 ;
     bool useThisEvent = true ;
     if (skipFirstEvent && (nSkips < numberOfModules) ) {
-      for (size_t i = 0; i < HLTPerformance.numberOfModules(); ++i ) {
-	const HLTPerformanceInfo::Module & myModule = HLTPerformance.getModule(i);
+      for (size_t i = 0; i < (*HLTPerformanceWrapper)->numberOfModules(); ++i ) {
+	const HLTPerformanceInfo::Module & myModule = (*HLTPerformanceWrapper)->getModule(i);
 	if (useModule.at(mCtr++)) {
 	  // Due to the resolution problems with CPUTimer,
 	  // ALWAYS determine event skipping using wall clock time
@@ -929,14 +936,14 @@ int main(int argc, char ** argv) {
     // Determine module times, module success/failure
     pCtr = 0 ; pIdx = 0 ;
     std::vector<bool> eventCounted(numberOfModules,false) ; 
-    for (size_t piter = 0; piter < HLTPerformance.numberOfPaths(); ++piter) {
-      const HLTPerformanceInfo::Path p = HLTPerformance.getPath(piter);
+    for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
+      const HLTPerformanceInfo::Path p = (*HLTPerformanceWrapper)->getPath(piter);
 
       if (usePath.at(pCtr)) {
 	if (p.status().accept()) eventPathStatus.at(ievt).at(pIdx) = -1 ; 
 	mCtr = 0 ; mIdx = 0 ; 
-	for ( size_t mm = 0; mm < HLTPerformance.getPath(piter).numberOfModules(); ++mm) {
-	  HLTPerformanceInfo::Module & myModule=HLTPerformance.getModuleOnPath(mm, piter); 
+	for ( size_t mm = 0; mm < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); ++mm) {
+	  const HLTPerformanceInfo::Module & myModule=(*HLTPerformanceWrapper)->getModuleOnPath(mm, piter); 
 	  if ( useModuleInPath.at(pCtr).at(mCtr) ) {                        
 	    if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {
 	      moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += getTime(myModule,takeCPUtime) ;
@@ -978,8 +985,8 @@ int main(int argc, char ** argv) {
       pCtr++ ;
     }
     mCtr = 0 ; mIdx = 0 ;
-    for (size_t i = 0; i < HLTPerformance.numberOfModules(); ++i ) {
-      const HLTPerformanceInfo::Module & myModule = HLTPerformance.getModule(i);
+    for (size_t i = 0; i < (*HLTPerformanceWrapper)->numberOfModules(); ++i ) {
+      const HLTPerformanceInfo::Module & myModule = (*HLTPerformanceWrapper)->getModule(i);
       if (useModule.at(mCtr++)) {
 	moduleTimeSummaryVector.at(mIdx) += getTime((myModule),takeCPUtime) ; 
 	eventModuleTime.at(ievt).at(mIdx) = getTime((myModule),takeCPUtime) ; 
@@ -1339,10 +1346,10 @@ int main(int argc, char ** argv) {
       for (unsigned int i=0; i<squareOne.size(); i++) {
 	sumfile << squareOne.at(i) << ", found in path(s) " ;
 	int pCtr = 0 ; 
-	for (size_t piter = 0; piter < HLTPerformance.numberOfPaths(); ++piter) {
-	  const HLTPerformanceInfo::Path p = HLTPerformance.getPath(piter);
-	  for (size_t i = 0; i < HLTPerformance.numberOfModules(); ++i ) {
-	    const HLTPerformanceInfo::Module & myModule = HLTPerformance.getModule(i);
+	for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
+	  const HLTPerformanceInfo::Path p = (*HLTPerformanceWrapper)->getPath(piter);
+	  for (size_t i = 0; i < (*HLTPerformanceWrapper)->numberOfModules(); ++i ) {
+	    const HLTPerformanceInfo::Module & myModule = (*HLTPerformanceWrapper)->getModule(i);
 	    if (myModule.name() == squareOne.at(i)) {
 	      if (pCtr > 0) sumfile << ", " ;
 	      sumfile << p.name() ; 
@@ -1481,7 +1488,7 @@ int main(int argc, char ** argv) {
 	createTOCentry(pdf,"Average module running time",pageNumber,&tocList) ; 
       }
           
-      if (HLTPerformance.numberOfPaths() > 1) {
+      if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
 	createTOCentry(pdf,"Average module (in path) time",pageNumber,&tocList,pathNames) ; 
 	createTOCentry(pdf,"Average module (in path) running time",pageNumber,&tocList,pathNames) ; 
 	createTOCentry(pdf,"Average path time",pageNumber, &tocList) ; 
@@ -1490,7 +1497,7 @@ int main(int argc, char ** argv) {
           
       createTOCentry(pdf,"Path rejection factor",pageNumber,&tocList) ; 
       createTOCentry(pdf,"Path success rate",pageNumber,&tocList) ; 
-      if (HLTPerformance.numberOfPaths() > 1) {
+      if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
 	createTOCentry(pdf,"Path vs. Path success rate",pageNumber,&tocList) ; 
 	createTOCentry(pdf,"Fraction of single path success",pageNumber,&tocList) ; 
       }
@@ -1502,12 +1509,12 @@ int main(int argc, char ** argv) {
       if (writeEventSection) {
 	createTOCentry(pdf,"Per event module time",pageNumber,&tocList,moduleNames) ; 
 	createTOCentry(pdf,"Per event module running time",pageNumber,&tocList,moduleNames) ; 
-	if (HLTPerformance.numberOfPaths() > 1) {
+	if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
 	  createTOCentry(pdf,"Per event module (in path) running time",pageNumber,&tocList,
 			 pathNames,moduleInPathNames) ;
 	}
 	createTOCentry(pdf,"Per event path time",pageNumber,&tocList,pathNames) ; 
-	if (HLTPerformance.numberOfPaths() > 1) 
+	if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) 
 	  createTOCentry(pdf,"Per event incremental path time",pageNumber,&tocList,pathNames) ;
       }
           
@@ -1528,11 +1535,11 @@ int main(int argc, char ** argv) {
       plot1D(moduleScaledTimeSummary,c1,writePdf) ;
     }
         
-    if (HLTPerformance.numberOfPaths() > 1) {
+    if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plotMany(moduleInPathTimeSummary,c1,writePdf) ;
       plotMany(moduleInPathScaledTimeSummary,c1,writePdf) ;
     }
-    if (HLTPerformance.numberOfPaths() > 1) {
+    if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plot1D(pathTimeSummary,c1,writePdf) ; 
       plot1D(incPathTimeSummary,c1,writePdf) ; 
     }
@@ -1540,7 +1547,7 @@ int main(int argc, char ** argv) {
     //--- Success/Rejection plots ---//
     plot1D(pathRejection,pathRejectAll,c1,writePdf) ; 
     plot1D(pathSuccessFraction,c1,writePdf) ; 
-    if (HLTPerformance.numberOfPaths() > 1) {
+    if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plot2D(pathVsPathSummary,c1,writePdf) ; 
       plot1D(uniquePathSuccessFraction,c1,writePdf) ; 
     }
@@ -1551,12 +1558,12 @@ int main(int argc, char ** argv) {
     //--- Event timing ---//
     plotMany(moduleTime,c1,writeEventSection) ;
     plotMany(moduleScaledTime,c1,writeEventSection) ; 
-    if (HLTPerformance.numberOfPaths() > 1) {
+    if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plotModuleInPath(moduleInPathScaledTime,c1,
 		       numberOfPaths,numberOfModulesInPath,writeEventSection) ; 
     }
     plotMany(pathTime,c1,writeEventSection) ;
-    if (HLTPerformance.numberOfPaths() > 1) {
+    if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plotMany(incPathTime,c1,writeEventSection) ;
     }
         

@@ -6,48 +6,64 @@ use strict ;
 my $infile ; my $bkmrkfile ; my $outfile ;
 if ($#ARGV == 2) {
     $infile = $ARGV[0] ; 
-    $bkmrkfile = $ARGV[1] ; 
-    $outfile = $ARGV[2] ; 
+    $outfile = $ARGV[1] ; 
+    $bkmrkfile = $ARGV[2] ; 
     print "Adding bookmarks to $infile.  Output file is $outfile.\n" ; 
+} elsif ($#ARGV == 1) { 
+    $infile = $ARGV[0] ; 
+    $outfile = $ARGV[1] ;
+    my @inSplitter = split(/\./,$infile) ;
+    $bkmrkfile = "$inSplitter[0]-bookmark.txt"
 } elsif ($#ARGV == 0) {
     my $arg = $ARGV[0] ; 
     chomp($arg) ; 
     if (($arg eq "-h") || ($arg eq "--help")) {
-        die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+        die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> (<out.pdf>) (<bkmrk.txt>)\n\n" . 
         "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
         "and results are output to bookmarked file <out.pdf>\n\n" . 
-        "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n\n" . 
+        "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" .
+        "NOTE: <out.pdf> and <bkmrk.txt> are optional.  Defaults are [in]-bm.pdf and [in]-bookmark.txt, respectively.\n\n" .
         "Format of <bkmrk.txt>: \n" . 
         "[Chapter name]^^[page number]\n" .
         "[Chapter name]^[Section name]^^[page number]\n" .
         "[Chapter name]^[Section name]^[Subsection name]^^[page number] ...\n" .
         "Each line of <bkmrk.txt> must specify a desired bookmark.\n" ; 
     } else {
-        die "\nInvalid format for input to (addBookmarks.csh/bookmarkPdf.pl).\n" .
-            "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
-            "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
-            "and results are output to bookmarked file <out.pdf>\n" . 
-            "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ; 
+        $infile = $ARGV[0] ; 
+        my @inSplitter = split(/\./,$infile) ;
+        # print "insplitter position 0 is $inSplitter[0]\n" ; 
+        # print "insplitter position 1 is $inSplitter[1]\n" ; 
+        $outfile = "$inSplitter[0]-bm.pdf" ;
+        $bkmrkfile = "$inSplitter[0]-bookmark.txt"
+#        die "\nInvalid format for input to (addBookmarks.csh/bookmarkPdf.pl).\n" .
+#            "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> (<out.pdf>) (<bkmrk.txt>)\n\n" . 
+#            "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
+#            "and results are output to bookmarked file <out.pdf>\n" . 
+#            "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" .
+#            "NOTE: <out.pdf> and <bkmrk.txt> are optional.  Defaults are [in]-bm.pdf and [in]-bookmark.txt, respectively.\n\n" ; 
  
     }
 } else {
-    die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    die "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> (<out.pdf>) (<bkmrk.txt>)\n\n" . 
         "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
         "and results are output to bookmarked file <out.pdf>\n" . 
-        "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ; 
+        "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" . 
+        "NOTE: <out.pdf> and <bkmrk.txt> are optional.  Defaults are [in]-bm.pdf and [in]-bookmark.txt, respectively.\n\n" ; 
 }
 
 # Quick sanity checks
 open(INFILE,$infile) || die "Could not open $infile.\n" .
-    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> (<out.pdf>) (<bkmrk.txt>)\n\n" . 
     "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
     "and results are output to bookmarked file <out.pdf>\n" . 
-    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ;  
+    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" . 
+    "NOTE: <out.pdf> and <bkmrk.txt> are optional.  Defaults are [in]-bm.pdf and [in]-bookmark.txt, respectively.\n\n" ; 
 open(BKMRKS,$bkmrkfile) || die "Could not open $bkmrkfile.\n" .
-    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> <bkmrk.txt> <out.pdf>\n\n" . 
+    "\nUsage: (addBookmarks.csh/bookmarkPdf.pl) <in.pdf> (<out.pdf>) (<bkmrk.txt>)\n\n" . 
     "Input PDF <in.pdf> and bookmarks text file <bkmrk.txt> must already exist,\n" . 
     "and results are output to bookmarked file <out.pdf>\n" . 
-    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" ;  
+    "If <out.pdf> = <in.pdf>, the input file WILL be overwritten.\n" .  
+    "NOTE: <out.pdf> and <bkmrk.txt> are optional.  Defaults are [in]-bm.pdf and [in]-bookmark.txt, respectively.\n\n" ; 
 
 # Create an array of bookmarks
 my @bookmarkPageLabels ; 

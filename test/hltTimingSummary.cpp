@@ -944,8 +944,8 @@ int main(int argc, char ** argv) {
 	mCtr = 0 ; mIdx = 0 ; 
 	for ( size_t mm = 0; mm < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); ++mm) {
 	  const HLTPerformanceInfo::Module & myModule=(*HLTPerformanceWrapper)->getModuleOnPath(mm, piter); 
-	  if ( useModuleInPath.at(pCtr).at(mCtr) ) {                        
-	    if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {
+	  if ( useModuleInPath.at(pCtr).at(mCtr) ) {
+            if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {
 	      moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += getTime(myModule,takeCPUtime) ;
 	      pathTimeSummaryVector.at(pIdx) += getTime((myModule),takeCPUtime) ;
 	      if (uniqueModule.at(pIdx).at(mIdx))
@@ -953,7 +953,7 @@ int main(int argc, char ** argv) {
                             
 	      // Determine success/failure
 	      moduleInPathIn.at(pIdx).at(mIdx)++ ;
-
+              
 	      int globalModuleIndex = globalModuleInPathMapper.at(pIdx).at(mIdx) ;
 	      if (globalModuleIndex >= 0) {
 		if (!eventCounted.at(unsigned(globalModuleIndex))) {
@@ -975,10 +975,12 @@ int main(int argc, char ** argv) {
 	      mIdx++ ; 
 	    }
 	  } else {
-	    if ( (int(p.status().index()) == mCtr) ) // Path dies at excluded module
-	      eventPathStatus.at(ievt).at(pIdx) = -2. ;
-	  }
-	  mCtr++ ; 
+              if ( (int(p.status().index()) == mCtr) ) { // Path dies at excluded module
+                  // The mIdx is pointing to the next "used" module, have not gotten there yet
+                  eventPathStatus.at(ievt).at(pIdx) = double(mIdx) - 0.5 ;   
+              }
+          }
+	  mCtr++ ;
 	}
 	pIdx++ ;
       }

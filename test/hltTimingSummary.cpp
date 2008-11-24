@@ -692,7 +692,13 @@ int main(int argc, char ** argv) {
       while ( !filterFile.eof() ) {
 	std::string skipped ;
 	getline(filterFile,skipped) ; 
-	squareOne.push_back( skipped ) ;
+        //--- Special: remove any trailing whitespace ---//
+        size_t spos = skipped.find_first_not_of(" ") ; 
+        size_t epos = skipped.find_last_not_of(" ") ;
+        if ( spos != std::string::npos && epos != std::string::npos ) { 
+            skipped = skipped.substr(spos,epos) ; 
+            squareOne.push_back( skipped ) ;
+        }
       }
     } else { //--- Assume the file is a comma-separated list of modules ---//
       unsigned int strStart = 0 ; 
@@ -713,8 +719,14 @@ int main(int argc, char ** argv) {
     if (excludeFile.is_open()) { //--- Excluded modules listed in a file ---//
       while ( !excludeFile.eof() ) {
 	std::string skipped ;
-	getline(excludeFile,skipped) ; 
-	skipTiming.push_back( skipped ) ;
+	getline(excludeFile,skipped) ;
+        //--- Special: remove any trailing whitespace ---//
+        size_t spos = skipped.find_first_not_of(" ") ; 
+        size_t epos = skipped.find_last_not_of(" ") ;
+        if ( spos != std::string::npos && epos != std::string::npos ) { 
+            skipped = skipped.substr(spos,epos+1) ; 
+            skipTiming.push_back( skipped ) ;
+        }
       }
     } else { //--- Assume the file is a comma-separated list of modules ---//
       unsigned int strStart = 0 ; 

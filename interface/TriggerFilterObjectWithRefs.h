@@ -13,8 +13,8 @@
  *  possible HLT filters. Hence we accept the reasonably small
  *  overhead of empty containers.
  *
- *  $Date: 2008/05/02 13:35:27 $
- *  $Revision: 1.13 $
+ *  $Date: 2009/03/17 16:21:34 $
+ *  $Revision: 1.13.2.1 $
  *
  *  \author Martin Grunewald
  *
@@ -22,10 +22,13 @@
 
 #include "DataFormats/HLTReco/interface/TriggerRefsCollections.h"
 #include "FWCore/Utilities/interface/InputTag.h"
+#include "FWCore/Utilities/interface/InputTagHash.h"
+#include "FWCore/Utilities/interface/InputTagOps.h"
 
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <ext/hash_set>
 
 namespace trigger
 {
@@ -36,12 +39,17 @@ namespace trigger
   /// compared to the old HLT data model's HLTFilterObjectWithRefs
   /// class)
   class TriggerFilterObjectWithRefs : public TriggerRefsCollections {
+  public:
+    typedef __gnu_cxx::hash_set<edm::InputTag, edm::InputTagHash, edm::InputTagEquality> InputTagSet;
+    //typedef std::set<edm::InputTag, edm::InputTagCompare> InputTagSet;
 
   /// data members
   private:
-    int path_;
-    int module_;
-    std::vector<std::string> collectionTags_;
+    int  path_;
+    int  module_;
+    bool mask_;
+
+    static InputTagSet s_collectionTags;
 
   /// methods
   public:
@@ -50,37 +58,35 @@ namespace trigger
       TriggerRefsCollections(),
       path_(-9),
       module_(-9),
-      collectionTags_() { }
+      mask_(false) {}
     
     TriggerFilterObjectWithRefs(int path, int module):
       TriggerRefsCollections(),
       path_(path),
       module_(module),
-      collectionTags_() { }
+      mask_(false) {}
     
     /// accessors
-    int path() const {return path_;}
-    int module() const {return module_;}
+    int  path()   const { return path_; }
+    int  module() const { return module_; }
+    bool mask()   const { return mask_; }
     
     /// collectionTags
     void addCollectionTag(const edm::InputTag& collectionTag){
-      collectionTags_.push_back(collectionTag.encode());
+      s_collectionTags.insert(collectionTag);
+      mask_ = true;
     }
-    
-    void getCollectionTags(std::vector<edm::InputTag>& collectionTags) const {
-      const trigger::size_type n(collectionTags_.size());
-      collectionTags.resize(n);
-      for (trigger::size_type i=0; i!=n; ++i) {
-	collectionTags[i]=edm::InputTag(collectionTags_[i]);
-      }
+
+    static    
+    const InputTagSet & getCollectionTags() {
+      return s_collectionTags;
     }
 
     /// utility
     void swap(TriggerFilterObjectWithRefs & other) {
       TriggerRefsCollections::swap(other);                  // swap base instance
-      std::swap(path_,           other.path_);
-      std::swap(module_,         other.module_);
-      std::swap(collectionTags_, other.collectionTags_);    // use specialized version for STL containers
+      std::swap(path_,   other.path_);
+      std::swap(module_, other.module_);
     }
 
   };

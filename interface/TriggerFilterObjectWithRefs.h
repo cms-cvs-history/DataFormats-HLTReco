@@ -13,8 +13,8 @@
  *  possible HLT filters. Hence we accept the reasonably small
  *  overhead of empty containers.
  *
- *  $Date: 2009/04/17 18:12:00 $
- *  $Revision: 1.13.2.1.2.1 $
+ *  $Date: 2009/04/17 18:25:43 $
+ *  $Revision: 1.13.2.1.2.2 $
  *
  *  \author Martin Grunewald
  *
@@ -50,6 +50,7 @@ namespace trigger
     bool mask_;
 
     static InputTagSet s_collectionTags;
+    static InputTagSet s_filterTags;
 
   /// methods
   public:
@@ -59,27 +60,44 @@ namespace trigger
       path_(-9),
       module_(-9),
       mask_(false) {}
-    
+
     TriggerFilterObjectWithRefs(int path, int module):
       TriggerRefsCollections(),
       path_(path),
       module_(module),
       mask_(false) {}
-    
+
     /// accessors
     int  path()   const { return path_; }
     int  module() const { return module_; }
     bool mask()   const { return mask_; }
-    
+
     /// collectionTags
-    void addCollectionTag(const edm::InputTag& collectionTag){
-      s_collectionTags.insert(collectionTag);
-      mask_ = true;
+    template <class FILTER>
+    void addCollectionTag(const edm::InputTag & tag, const FILTER & filter, const std::string instance = "") {
+      if (tag.process().empty())
+        // set explicitely the current process name
+        s_collectionTags.insert(edm::InputTag(
+              tag.label(), 
+              tag.instance(), 
+              * filter.processName()));
+      else
+        s_collectionTags.insert(tag);
+      if (not mask_) {
+        s_filterTags.insert( filter.inputTag(instance) );
+        mask_ = true;
+      }
     }
 
-    static    
+    /// access private static member variables
+    static
     const InputTagSet & getCollectionTags() {
       return s_collectionTags;
+    }
+
+    static
+    const InputTagSet & getFilterTags() {
+      return s_filterTags;
     }
 
     /// utility

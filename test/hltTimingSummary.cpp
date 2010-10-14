@@ -1034,11 +1034,11 @@ int main(int argc, char ** argv) {
   } else { // Remove the slowest event, compute mean, std. dev. from subset of data 
     double subMean  = (sumTime-longestEventTime)/double(n_evts-1) ; 
     double subRmsSq = (sumTimeSq-longestEventTime*longestEventTime)/double(n_evts-1) ; 
-    double subSigma = sqrt(subRmsSq - subMean*subMean) ; 
+    double subSigma = std::sqrt(subRmsSq - subMean*subMean) ; 
     double subReasMaxTime = subMean + 3. * subSigma ; 
 
-    while (pow(10,xscale--) > subReasMaxTime) ;
-    xscale += 2 ; xmax = pow(10,xscale+3) ;
+    while (std::pow(10,xscale--) > subReasMaxTime) ;
+    xscale += 2 ; xmax = std::pow(10,xscale+3) ;
         
     if ( (xmax/5.) > (subReasMaxTime * 1000.) ) xmax = xmax / 5. ;
     if ( (xmax/2.) > (subReasMaxTime * 1000.) ) xmax = xmax / 2. ;

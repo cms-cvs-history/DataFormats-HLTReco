@@ -3,6 +3,7 @@
   <use   name="cppunit"/>
 </bin>
 <bin   name="hltTimingSummary" file="hltTimingSummary.cpp">
+  <flags NO_TESTRUN="1"/>
   <use   name="boost"/>
   <use   name="boost_program_options"/>
   <use   name="FWCore/FWLite"/>

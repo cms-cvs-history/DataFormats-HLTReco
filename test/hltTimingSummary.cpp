@@ -9,14 +9,18 @@
 #include <TTree.h>
 #include <TBranch.h>
 #include <TSystem.h>
+#include <THStack.h>
 
 #include <boost/program_options.hpp>
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <cmath>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "DataFormats/HLTReco/interface/HLTPerformanceInfo.h"
+#include "DataFormats/Provenance/interface/EventAuxiliary.h"
 #include "FWCore/FWLite/interface/AutoLibraryLoader.h"
 #include "DataFormats/Common/interface/Wrapper.h"
 
@@ -44,11 +48,20 @@ bool useModuleByName(HLTPerformanceInfo::Module module,
   return true ; 
 }
 
+bool usePathByName(HLTPerformanceInfo::Path path,
+                     std::vector<std::string> skip) {
+    
+  for (unsigned int i=0; i<skip.size(); i++)
+    if (path.name() == skip.at(i)) return false; 
+    return true; 
+}
+
 void initialize(HLTPerformanceInfo hltPerf,
-                std::vector<std::string> skip,
+                std::vector<std::string> skipMod,
+		std::vector<std::string> skipPath,
                 std::vector<bool>* mod,
                 std::vector<bool>* path,
-                std::vector< std::vector<bool> >* mip,
+                std::vector< std::vector<bool> >* mip, //useModInPath
                 std::vector<std::string>* mNames,
                 std::vector<std::string>* pNames,
                 std::vector< std::vector<std::string> >* mipNames,
@@ -56,33 +69,50 @@ void initialize(HLTPerformanceInfo hltPerf,
                 std::vector<int>* nmips,
                 std::vector< std::vector<int> >* mIdx,
                 std::vector< std::vector<bool> >* unique,
-                std::vector< std::vector<int> >* mipMapper) {
+                std::vector< std::vector<int> >* mipMapper,
+		std::vector< int >* mIdxInt,
+		std::vector<std::string> mInt,
+		std::vector<int>* modExist) {
 
   //--- Start fresh ---//
   mod->clear() ; mip->clear() ;
   std::vector<std::string> names ; names.clear() ; 
+  std::vector<std::string> uniqueModInSkipPaths ;  uniqueModInSkipPaths.clear();
   nmods = 0 ; npaths = 0 ; 
+
   //--- Path initialization ---//
   for (size_t piter = 0; piter < hltPerf.numberOfPaths(); ++piter) {
+    const HLTPerformanceInfo::Path p = hltPerf.getPath(piter);
     int ctr = 0 ;
-    std::vector<bool> pathMod ; pathMod.clear() ;
+    std::vector<bool> pathMod;  pathMod.clear() ;
     std::vector<int>  modIdx ;  modIdx.clear() ; 
-    std::vector<bool> onlyOne ; onlyOne.clear() ;
-    for ( size_t mm = 0; mm < hltPerf.getPath(piter).numberOfModules(); ++mm) {
-      const HLTPerformanceInfo::Module & modIter=hltPerf.getModuleOnPath(mm, piter); 
-      if (useModuleByName(modIter,skip)) {
-	pathMod.push_back( true ) ;
-	names.push_back( modIter.name() ) ;
-	modIdx.push_back( hltPerf.moduleIndexInPath(modIter.name().c_str(),
-						    hltPerf.getPath(piter).name().c_str()) ) ;
-	onlyOne.push_back( hltPerf.uniqueModule(modIter.name().c_str()) ) ; 
-	ctr++ ; 
-      } else {
-	pathMod.push_back( false ) ;
+    std::vector<bool> onlyOne; onlyOne.clear() ;
+    if (usePathByName(p, skipPath)){
+      for ( size_t mm = 0; mm < hltPerf.getPath(piter).numberOfModules(); ++mm) {
+	const HLTPerformanceInfo::Module & modIter=hltPerf.getModuleOnPath(mm, piter); 
+	if (useModuleByName(modIter,skipMod)) {
+	  pathMod.push_back( true ) ;
+	  names.push_back( modIter.name() ) ;
+	  modIdx.push_back( hltPerf.moduleIndexInPath(modIter.name().c_str(),
+						      hltPerf.getPath(piter).name().c_str()) ) ;
+	  onlyOne.push_back( hltPerf.uniqueModule(modIter.name().c_str()) ) ; 
+	  ctr++ ;
+	} else {
+	  pathMod.push_back( false ) ;
+	}
       }
-    }   
+    } else if (!usePathByName(p,skipPath)) {
+      for ( size_t mm = 0; mm < hltPerf.getPath(piter).numberOfModules(); ++mm) {
+	const HLTPerformanceInfo::Module & modIter=hltPerf.getModuleOnPath(mm, piter); 
+	if (useModuleByName(modIter,skipMod)) {
+	  if (hltPerf.uniqueModule(modIter.name().c_str()) ) {
+	    uniqueModInSkipPaths.push_back( modIter.name() ) ;
+	  }
+	}
+      }
+    }
+    
     if (ctr > 0) { // Path has at least one valid module
-      const HLTPerformanceInfo::Path p = hltPerf.getPath(piter);
       path->push_back( true ) ;
       pNames->push_back( p.name() ) ;
       mipNames->push_back( names ) ;
@@ -93,7 +123,7 @@ void initialize(HLTPerformanceInfo hltPerf,
       mipMapper->push_back( mip2mIdx ) ;
       npaths++ ; 
     } else {
-      path->push_back( false ) ;
+      path->push_back(false);
     }
     mip->push_back( pathMod ) ;
     names.clear() ; 
@@ -102,17 +132,42 @@ void initialize(HLTPerformanceInfo hltPerf,
   //--- Module initialization ---//
   for (size_t i = 0; i < hltPerf.numberOfModules(); ++i ) {
     const HLTPerformanceInfo::Module & myModule = hltPerf.getModule(i);
-    if (useModuleByName(myModule,skip)) {
-      mod->push_back( true ) ;
-      mNames->push_back( myModule.name() ) ;
-      // Loop through module in path names, looking for this module
-      for (unsigned int i=0; i<unsigned(npaths); i++)
-	for (unsigned int j=0; j<unsigned(nmips->at(i)); j++)
-	  if (mipNames->at(i).at(j) == myModule.name())
-	    mipMapper->at(i).at(j) = nmods ; 
-      nmods++ ; 
+    if (useModuleByName(myModule,skipMod)) {
+      if (useModuleByName(myModule, uniqueModInSkipPaths)) {
+	mod->push_back( true ) ;
+	mNames->push_back( myModule.name() ) ;
+	// Loop through module in path names, looking for this module
+	for (unsigned int i=0; i<unsigned(npaths); i++)
+	  for (unsigned int j=0; j<unsigned(nmips->at(i)); j++)
+	    if (mipNames->at(i).at(j) == myModule.name())
+	      mipMapper->at(i).at(j) = nmods ; 
+	nmods++ ; 
+      } else {
+	mod->push_back( false ) ;
+      }
     } else {
       mod->push_back( false ) ;
+    }
+  }
+  
+  modExist->resize(nmods,0);
+  //for all paths, count how many times the each module exists
+  for (unsigned int i=0; i<unsigned(npaths); i++) {
+    for (unsigned int j=0; j<unsigned(nmips->at(i)); j++) {
+      int mipIndex = mipMapper->at(i).at(j);
+      modExist->at(mipIndex)++ ;
+    }
+  }
+
+  //mIdxInt is a list of index where each modInterested is located
+  for (unsigned i=0; i<mInt.size(); i++) {
+
+    std::vector<std::string>::iterator modpointer = std::find(mNames->begin(), 
+							      mNames->end(),
+							      mInt.at(i)); 
+    if (modpointer != mNames->end()) {
+      std::vector<std::string>::size_type indexValue = (modpointer - mNames->begin());
+      mIdxInt->push_back(indexValue);
     }
   }
 }
@@ -174,16 +229,19 @@ bool isFilterModule(HLTPerformanceInfo::Module module,
   return false ;
 }
 
-void plot1D(TH1D* histo, TCanvas* canvas, bool doPlot) {
+void plot1D(TH1D* histo, TCanvas* canvas, bool doPlot, int YScale) {
 
   // Standard 1D defaults
   double defaultSize   = 0.04 ; 
   double defaultMargin = 0.10 ; 
 
+  if (histo->GetEntries()==0) YScale=0; 
+  canvas->SetLogy(YScale);  
+
   histo->SetLabelSize(defaultSize) ; 
   canvas->SetBottomMargin(defaultMargin) ; 
-  canvas->SetLeftMargin(defaultMargin) ; 
-
+  canvas->SetLeftMargin(defaultMargin) ;
+ 
   // Try to calculate new size...
   double realXsize = canvas->GetXsizeReal() *
     (1.0 - (canvas->GetLeftMargin() + canvas->GetRightMargin())) ; 
@@ -227,11 +285,14 @@ void plot1D(TH1D* histo, TCanvas* canvas, bool doPlot) {
   }
 }
 
-void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot) {
+void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot, int YScale) {
 
   // Standard 1D defaults
   double defaultSize   = 0.04 ; 
   double defaultMargin = 0.10 ; 
+
+  if (h1->GetEntries()==0) YScale=0; 
+  canvas->SetLogy(YScale);
 
   h1->SetLabelSize(defaultSize) ; 
   h2->SetLabelSize(defaultSize) ; 
@@ -278,7 +339,7 @@ void plot1D(TH1D* h1, TH1D* h2, TCanvas* canvas, bool doPlot) {
 
   if (doPlot) {
     h1->Draw() ;
-    h2->SetFillColor(2) ; h2->Draw("same") ; 
+    h2->SetFillColor(2);  h2->Draw("same") ; 
     canvas->Update() ;
   }
 }
@@ -365,25 +426,95 @@ void plot2D(TH2D* histo, TCanvas* canvas, bool doPlot) {
   }
 }
 
-void plotMany(std::vector<TH1D*> histo, TCanvas* canvas, bool doPlot) {
+void plotMany(std::vector<TH1D*> histo, TCanvas* canvas, bool doPlot, int YScale) {
     
   for (unsigned int i=0; i<histo.size(); i++)
-    plot1D(histo.at(i),canvas,doPlot) ;
+    plot1D(histo.at(i),canvas,doPlot, YScale) ;
 }
 
 void plotMany(std::vector<TH1D*> h1, std::vector<TH1D*> h2,
-              TCanvas* canvas, bool doPlot) {
+              TCanvas* canvas, bool doPlot, int YScale) {
     
   for (unsigned int i=0; i<h1.size(); i++)
-    plot1D(h1.at(i),h2.at(i),canvas,doPlot) ;
+    plot1D(h1.at(i),h2.at(i),canvas,doPlot, YScale) ;
+}
+
+void plotMany(std::vector< std::vector<TH1D*> > hvec,TCanvas* canvas, bool doPlot, int YScale) {
+
+ // Standard 1D defaults
+  double defaultSize   = 0.04 ; 
+  double defaultMargin = 0.10 ; 
+  unsigned numCases = hvec.size();
+  unsigned nPaths = hvec.at(0).size();
+
+  canvas->SetLogy(YScale);
+
+  for (unsigned int i=0; i<nPaths; i++){
+    for (unsigned k=0; k<numCases; k++) {
+      hvec.at(k).at(i)->SetLabelSize(defaultSize) ;      
+    }
+    canvas->SetBottomMargin(defaultMargin) ; 
+    canvas->SetLeftMargin(defaultMargin) ; 
+
+    // Try to calculate new size...
+    double realXsize = canvas->GetXsizeReal() *
+      (1.0 - (canvas->GetLeftMargin() + canvas->GetRightMargin())) ; 
+    double realYsize = canvas->GetYsizeReal() *
+      (1.0 - (canvas->GetTopMargin() + canvas->GetBottomMargin())) ;
+    
+    double realBinSize = realXsize / double(hvec.at(0).at(i)->GetNbinsX()) ;
+    double realBinAsYfraction = realBinSize / realYsize ;
+    double newSize = realBinAsYfraction * 0.90;
+
+    THashList* hLabels = hvec.at(0).at(i)->GetXaxis()->GetLabels();
+    if (hLabels!=0) {
+      double charSize = std::min(defaultSize,newSize) ;
+      for (unsigned k=0; k<numCases; k++) {
+	hvec.at(k).at(i)->LabelsOption("v","x") ;    
+      }
+      //--- Loop through the bins to get the largest bin name size ---//
+      int nIter = 0 ; 
+      bool properMargin = false ;
+      double maxSize = defaultMargin ;
+      while (!properMargin) {
+	nIter++ ; 
+	for (int p=1; p<=hvec.at(0).at(i)->GetNbinsX(); p++) {
+	  std::string label = hvec.at(0).at(i)->GetXaxis()->GetBinLabel(p) ;
+	  double labelSize = 0.40 * label.size() * charSize ;
+	  if (labelSize > maxSize) maxSize = labelSize ;
+	}
+	properMargin = true ; 
+	if ((nIter < 10)&&(maxSize > 0.65)) {
+	  properMargin = false ;
+	  charSize = charSize*0.95 ;
+	  maxSize = defaultMargin;
+	}
+      }
+      
+      for (unsigned k=0; k<numCases; k++) {
+	hvec.at(k).at(i)->SetLabelSize(charSize,"X") ;
+      }
+      canvas->SetBottomMargin(maxSize) ;
+    }
+    
+    if (doPlot) {
+      hvec.at(0).at(i)->Draw() ;
+      THStack *hs= new THStack("hs", "test");
+      for (unsigned k=1; k<numCases; k++){
+	hs->Add(hvec.at(k).at(i));
+      }
+      hs->Draw("same") ; 
+      canvas->Update() ;
+    }
+  }
 }
 
 void plotModuleInPath(std::vector< std::vector<TH1D*> > histo, TCanvas* canvas,
-                      int nPaths, std::vector<int> nMiPs, bool doPlot) {
+                      int nPaths, std::vector<int> nMiPs, bool doPlot, bool scale) {
 
   for (unsigned int i=0; i<unsigned(nPaths); i++)
     for (unsigned int j=0; j<unsigned(nMiPs.at(i)); j++)
-      plot1D(histo.at(i).at(j),canvas,doPlot) ;
+      plot1D(histo.at(i).at(j),canvas,doPlot, scale) ;
 }
 
 void slowestModules(TH1D* histo,
@@ -558,7 +689,7 @@ int main(int argc, char ** argv) {
     
   //-- Load libraries ---//
   gSystem->Load("libFWCoreFWLite") ;
-  AutoLibraryLoader::enable() ;
+  AutoLibraryLoader::enable () ;
 
   //--- Default arguments ---//
   std::string filename = "hlt.root" ;
@@ -567,46 +698,73 @@ int main(int argc, char ** argv) {
   std::string pdfname = outbase + ".pdf" ;
   std::string txtname = outbase + "-bookmark.txt" ;
   std::string sumname ; 
-  std::vector<std::string> skipTiming ; skipTiming.clear() ; 
-  std::vector<std::string> squareOne ; squareOne.clear() ; 
-  std::string excludeName, startHere ; 
-    
+  std::vector<std::string> skipTimingMod ; skipTimingMod.clear() ; 
+  std::vector<std::string> skipTimingPath ; skipTimingPath.clear() ;
+  std::vector<std::string> squareOne ; squareOne.clear() ;
+  std::string strSpecificTotalTime;
+  std::string excludeModName,excludePathName, startHere ; 
+  std::string modPrintName;
+  std::vector<std::string> modInterested ; modInterested.clear() ; 
+  
   //--- Boolean flags ---//
   bool writePdf = true ;
   bool writeEventSection = true ;
+  bool writeRejectionSection = false;
   bool writeSummary = false ;
-  bool takeCPUtime = false ; 
+  bool takeCPUtime = false ;
   
+  int LogYScale = 0;
+  int LinYScale = 0;
   double userMaxTime = -1. ;
   double userBinWidth = -1. ; 
-  bool skipFirstEvent = false ; 
-    
+  bool skipFirstEvent = false ;
+  std::vector< std::pair<double,double> > specificTotalTime;
+  int numberOfspecificTotalTime = 0;
+
+  //--- Parameters to flag certain slow events ---//
+  double totalTimeThreshold  = -1. ; 
+  double pathTimeThreshold   = -1. ; 
+  double moduleTimeThreshold = -1. ;
+  
   //--- Get parameters from command line ---//
   boost::program_options::options_description desc(
 						   "Available options for hltTimingSummary") ; 
   desc.add_options()
-    ("help,h","Print this help message")
-    ("infile,i",   boost::program_options::value<std::string>(),
-     "Input file name (Default is hlt.root)") 
-    ("outfile,o",  boost::program_options::value<std::string>(),
-     "Sets output files to <UserName>.root/.pdf/-bookmark.txt (default is hltTimingSummary)")
-    ("pdfLevel,p", boost::program_options::value<int>(),
-     "Set the level of pdf verbosity: 0 (none), 1 (summary plots only), or 2 (full, default)")
-    ("summary,s",
-     "Creates user-friendly timing summary file <UserName>-summary.txt.  See \"-o\" option for <UserName>")
-    ("cpu,c",
-     "Results presented as CPU time (in msec).  Default is wall clock.")
-    ("time,t",     boost::program_options::value<double>(),
-     "All relevant histogram time axes run from 0 to <UserValue> (in msec)")
-    ("bin,b",      boost::program_options::value<double>(),
-     "Bin size (in msec) for relevant timing histograms, specified by the user")
-    ("noFirst,f",
-     "Skip ANY event where a module is run for the first time (By default, run over all events)") 
-    ("recalc,r", boost::program_options::value<std::string>(),
-     "Recalculate rejection factor starting from specified list of filters/modules")
-    ("exclude,e",   boost::program_options::value<std::string>(),
-     "Exclude a list of modules from the timing calculation") ;
-    
+      ("help,h","Print this help message")
+      ("infile,i",   boost::program_options::value<std::string>(),
+       "Input file name (Default is hlt.root)") 
+      ("outfile,o",  boost::program_options::value<std::string>(),
+       "Sets output files to <UserName>.root/.pdf/-bookmark.txt (default is hltTimingSummary)")
+      ("pdfLevel,p", boost::program_options::value<int>(),
+       "Set the level of pdf verbosity: 0 (none), 1 (summary plots only), 2 (default), or 3 (full, inc Rejection")
+      ("summary,s",
+       "Creates user-friendly timing summary file <UserName>-summary.txt.  See \"-o\" option for <UserName>")
+      ("cpu,c",
+       "Results presented as CPU time (in msec).  Default is wall clock.")
+      ("time,t",     boost::program_options::value<double>(),
+       "All relevant histogram time axes run from 0 to <UserValue> (in msec)")
+      ("bin,b",      boost::program_options::value<double>(),
+       "Bin size (in msec) for relevant timing histograms, specified by the user")
+      ("noFirst,f",
+       "Skip ANY event where a module is run for the first time (By default, run over all events)") 
+      ("logY,y",
+       "plot log scale y-axis for those plots that have events as entries") 
+      ("recalc,r", boost::program_options::value<std::string>(),
+       "Recalculate rejection factor starting from specified list of filters/modules")
+      ("excludeMod,e",   boost::program_options::value<std::string>(),
+       "Exclude a list of modules from the timing calculation")
+      ("excludePath,x",   boost::program_options::value<std::string>(),
+       "Exclude a list of paths from the timing calculation")
+      ("timelimit,l", boost::program_options::value<double>(),
+       "Events where total time exceeds user-specified limit (in msec) listed in summary file")
+      ("modPrint,g",   boost::program_options::value<std::string>(),
+       "Print event and run number of the user's input modules")
+      ("pathlimit,a", boost::program_options::value<double>(),
+       "Events where any path time exceeds user-specified limit (in msec) listed in summary file")
+      ("modulelimit,m", boost::program_options::value<double>(),
+       "Events where any module time exceeds user-specified limit (in msec) listed in summary file") 
+      ("timeSpecific,q",   boost::program_options::value<std::string>(),
+       "Overplots events with total time exceeds user-specified limit (in msec) for each pathTime: minTime,maxTimeAminTime,maxTimeA... Example:23,45A200,300");
 
   std::string usage = "\nSample hltTimingSummary usage::\n" ; 
   usage += "\"hltTimingSummary -t 50 -b 5 -r filter1 -p 1\" " ; 
@@ -653,17 +811,24 @@ int main(int argc, char ** argv) {
     pdfname = outbase + ".pdf" ;
     txtname = outbase + "-bookmark.txt" ; 
   }
-  if (vmap.count("summary")) {
+  if (vmap.count("summary") || vmap.count("timelimit") || vmap.count("pathlimit") || vmap.count("modulelimit")) {
     writeSummary = true ; 
-    sumname = outbase + "-summary.txt" ; 
+    sumname = outbase + "-summary.txt" ;
+    if ( !vmap.count("summary") )
+        std::cout << "Summary option not specified but time limit option(s) included.  Summary file will be generated."
+                  << std::endl ;
+    if (vmap.count("timelimit")) totalTimeThreshold = vmap["timelimit"].as<double>() ; 
+    if (vmap.count("pathlimit")) pathTimeThreshold = vmap["pathlimit"].as<double>() ; 
+    if (vmap.count("modulelimit")) moduleTimeThreshold = vmap["modulelimit"].as<double>() ;
   }
   if (vmap.count("pdfLevel")) {
     writePdf = false ;
-    writeEventSection = false ; 
+    writeEventSection = false ;
     int setPdflevel = vmap["pdfLevel"].as<int>() ;
-    if (setPdflevel >= 1) writePdf = true ; 
-    if (setPdflevel == 2) writeEventSection = true ;
-    if (setPdflevel > 2 || setPdflevel < 0) {
+    if (setPdflevel >= 1) writePdf = true ;
+    if (setPdflevel >= 2) writeEventSection = true ;
+    if (setPdflevel == 3) writeRejectionSection = true;
+    if (setPdflevel > 3 || setPdflevel < 0) {
       std::cout << "Unknown PDF specification." << std::endl ; 
       std::cerr << desc << usage << std::endl ;
       return 1 ;
@@ -683,6 +848,9 @@ int main(int argc, char ** argv) {
   }
   if (vmap.count("noFirst")) {
     skipFirstEvent = true ; 
+  }
+  if (vmap.count("logY")) {
+    LogYScale = 1 ;
   }
   if (vmap.count("recalc")) {
     startHere = vmap["recalc"].as<std::string>() ; 
@@ -712,45 +880,131 @@ int main(int argc, char ** argv) {
       squareOne.push_back( startHere.substr(strStart,startHere.length()) ) ; 
     }
   }
-  if (vmap.count("exclude")) {
-    excludeName = vmap["exclude"].as<std::string>() ; 
+  if (vmap.count("excludeMod")) {
+    excludeModName = vmap["excludeMod"].as<std::string>() ; 
         
-    ifstream excludeFile(excludeName.c_str()) ;
-    if (excludeFile.is_open()) { //--- Excluded modules listed in a file ---//
-      while ( !excludeFile.eof() ) {
+    ifstream excludeModFile(excludeModName.c_str()) ;
+    if (excludeModFile.is_open()) { //--- Excluded modules listed in a file ---//
+      while ( !excludeModFile.eof() ) {
 	std::string skipped ;
-	getline(excludeFile,skipped) ;
+	getline(excludeModFile,skipped) ;
         //--- Special: remove any trailing whitespace ---//
         size_t spos = skipped.find_first_not_of(" ") ; 
         size_t epos = skipped.find_last_not_of(" ") ;
         if ( spos != std::string::npos && epos != std::string::npos ) { 
             skipped = skipped.substr(spos,epos+1) ; 
-            skipTiming.push_back( skipped ) ;
+            skipTimingMod.push_back( skipped ) ;
         }
       }
     } else { //--- Assume the file is a comma-separated list of modules ---//
       unsigned int strStart = 0 ; 
-      for (unsigned int itr=excludeName.find(",",0); itr!=std::string::npos;
-	   itr=excludeName.find(",",itr)) {
-	std::string skipped = excludeName.substr(strStart,(itr-strStart)) ; 
+      for (unsigned int itr=excludeModName.find(",",0); itr!=std::string::npos;
+	   itr=excludeModName.find(",",itr)) {
+	std::string skipped = excludeModName.substr(strStart,(itr-strStart)) ; 
 	itr++ ; strStart = itr ; 
-	skipTiming.push_back( skipped ) ;
+	skipTimingMod.push_back( skipped ) ;
       }
       //--- Fill the last entry ---//
-      skipTiming.push_back( excludeName.substr(strStart,excludeName.length()) ) ; 
+      skipTimingMod.push_back( excludeModName.substr(strStart,excludeModName.length()) ) ; 
     }
   }
 
-  //--- Sanity check ---//
-  for (unsigned int i=0; i<skipTiming.size(); i++) {
-    for (unsigned int j=0; j<squareOne.size(); j++) {
-      if (skipTiming.at(i) == squareOne.at(j)) {
-	std::cout << "NOTE: You requested that " << squareOne.at(j)
-		  << " be treated as a filter, but you also want it excluded from calculations"
-		  << std::endl ;
-	std::cout << "Please select either \"filter\" or \"exclude\" for this module." << std::endl ;
-	return 2 ;
+  if (vmap.count("excludePath")) {
+    excludePathName = vmap["excludePath"].as<std::string>() ; 
+    
+    ifstream excludePathFile(excludePathName.c_str()) ;
+    if (excludePathFile.is_open()) { //--- Excluded paths listed in a file ---//
+      while ( !excludePathFile.eof() ) {
+	std::string skipped ;
+	getline(excludePathFile,skipped) ;
+        //--- Special: remove any trailing whitespace ---//
+        size_t spos = skipped.find_first_not_of(" ") ; 
+        size_t epos = skipped.find_last_not_of(" ") ;
+        if ( spos != std::string::npos && epos != std::string::npos ) { 
+            skipped = skipped.substr(spos,epos+1) ; 
+            skipTimingPath.push_back( skipped ) ;
+        }
       }
+    } else { //--- Assume the file is a comma-separated list of paths ---//
+      unsigned int strStart = 0 ; 
+      for (unsigned int itr=excludePathName.find(",",0); itr!=std::string::npos;
+	   itr=excludePathName.find(",",itr)) {
+	std::string skipped = excludePathName.substr(strStart,(itr-strStart)) ; 
+	itr++ ; strStart = itr ; 
+	skipTimingPath.push_back( skipped ) ;
+      }
+      //--- Fill the last entry ---//
+      skipTimingPath.push_back( excludePathName.substr(strStart,excludePathName.length()) ) ; 
+    }
+  }
+
+  if (vmap.count("modPrint")) {
+    modPrintName = vmap["modPrint"].as<std::string>() ; 
+ 
+    ifstream modPrintFile(modPrintName.c_str()) ;
+    if (modPrintFile.is_open()) { //--- Excluded modules listed in a file ---//
+      while ( !modPrintFile.eof() ) {
+	std::string modname ;
+	getline(modPrintFile,modname) ;
+        //--- Special: remove any trailing whitespace ---//
+        size_t spos = modname.find_first_not_of(" ") ; 
+        size_t epos = modname.find_last_not_of(" ") ;
+        if ( spos != std::string::npos && epos != std::string::npos ) { 
+            modname = modname.substr(spos,epos+1) ; 
+            modInterested.push_back( modname ) ;
+        }
+      }
+    } else { //--- Assume the file is a comma-separated list of modules ---//
+      unsigned int strStart = 0 ; 
+      for (unsigned int itr=modPrintName.find(",",0); itr!=std::string::npos;
+	   itr=modPrintName.find(",",itr)) {
+	std::string modname = modPrintName.substr(strStart,(itr-strStart)) ; 
+	itr++ ; strStart = itr ; 
+	modInterested.push_back( modname ) ;
+      }
+      //--- Fill the last entry ---//
+      modInterested.push_back( modPrintName.substr(strStart,modPrintName.length()) ) ; 
+    }
+  }
+
+ if (vmap.count("timeSpecific")) {
+    strSpecificTotalTime = vmap["timeSpecific"].as<std::string>() ; 
+    
+    unsigned int strStart = 0 ;
+    numberOfspecificTotalTime = 0;
+    
+    for (unsigned int itr=strSpecificTotalTime.find("A",0); itr!=std::string::npos;
+	 itr=strSpecificTotalTime.find("A",itr)) {
+
+      std::string strSpecificTimePair = strSpecificTotalTime.substr(strStart,(itr-strStart)) ; 
+      size_t commaPos = strSpecificTimePair.find(",",0);
+      std::pair<double,double> specificTimePair;
+      specificTimePair.first =  atof(strSpecificTimePair.substr(0,commaPos).c_str());
+      specificTimePair.second =  atof(strSpecificTimePair.substr(commaPos+1, strSpecificTimePair.length()-1-commaPos).c_str());
+      specificTotalTime.push_back(specificTimePair);
+      numberOfspecificTotalTime++;
+      itr++ ; strStart = itr ;
+    }
+    //--- Fill the last entry ---//
+    std::string strSpecificTimePair = strSpecificTotalTime.substr(strStart, strSpecificTotalTime.length()-strStart);
+    size_t commaPos = strSpecificTimePair.find(",",0);
+    std::pair<double,double> specificTimePair;
+    specificTimePair.first =  atof(strSpecificTimePair.substr(0,commaPos).c_str());
+    specificTimePair.second =  atof(strSpecificTimePair.substr(commaPos+1, strSpecificTimePair.length()-1-commaPos).c_str());
+    specificTotalTime.push_back(specificTimePair);
+    numberOfspecificTotalTime++;
+ }
+ 
+ //--- Sanity check ---//
+ for (unsigned int i=0; i<skipTimingMod.size(); i++) {
+   for (unsigned int j=0; j<squareOne.size(); j++) {
+     if (skipTimingMod.at(i) == squareOne.at(j)) {
+       std::cout << "NOTE: You requested that " << squareOne.at(j)
+		 << " be treated as a filter, but you also want it excluded from calculations"
+		 << std::endl ;
+       std::cout << "Please select either \"filter\" or \"exclude\" for this module." << std::endl ;
+       return 2 ;
+     }
     }
   }
   
@@ -783,6 +1037,12 @@ int main(int argc, char ** argv) {
   // Additions suggested by Chris Jones and Dan Riley
   edm::Wrapper<HLTPerformanceInfo>* HLTPerformanceWrapper = 0 ;
   TBPerfInfo->SetAddress((void *) & HLTPerformanceWrapper) ;
+
+  //--- Additions necessary to get the actual run/event number ---//
+  TBranch* TBEvtAux = events->GetBranch("EventAuxiliary") ;
+  assert(TBEvtAux) ;
+  edm::EventAuxiliary* EvtAuxWrapper = new edm::EventAuxiliary ; 
+  TBEvtAux->SetAddress((void *) & EvtAuxWrapper) ;
     
   //--- Prepare the output ---//
   TFile* outFile = new TFile(outname.c_str(), "recreate") ;
@@ -824,7 +1084,10 @@ int main(int argc, char ** argv) {
   std::vector<int> numberOfModulesInPath ;
   std::vector< std::vector<int> > moduleIndexByPath ; 
   std::vector< std::vector<bool> > uniqueModule ;
-    
+  std::vector<double> moduleIn ;     
+  std::vector<std::vector<int> > numberOfModulesExecution;
+  std::vector<int> moduleExistence;
+
   std::vector< std::vector <double> > eventModuleTime ; 
   std::vector< std::vector<double> > eventPathStatus ;
   std::vector< std::vector<double> > moduleInPathIn ; 
@@ -832,21 +1095,27 @@ int main(int argc, char ** argv) {
 
   std::vector<double> moduleTimeSummaryVector ; 
   std::vector<double> pathTimeSummaryVector ; 
+  std::vector< std::vector<double> > specificPathTimeSummaryVector ;
   std::vector<double> incPathTimeSummaryVector ;
   std::vector< std::vector<int> > globalModuleInPathMapper ; 
-  std::vector< std::vector<double> > moduleInPathTimeSummaryVector ; 
-  std::vector<double> moduleIn ; 
+  std::vector< std::vector<double> > moduleInPathTimeSummaryVector ;  
 
   std::vector<double> longestEventTimeByModule ; 
   std::vector<int> longestEventByModule ; 
-    
   std::vector<int> pathFilterModule ; 
 
+  std::vector< std::pair<unsigned int,unsigned int> > slowEventSummaryVector ; 
+  std::vector< std::pair<unsigned int,unsigned int> > slowPathSummaryVector ; 
+  std::vector< std::pair<unsigned int,unsigned int> > slowModuleSummaryVector ; 
+  std::vector<int> modIdxInterested;
+  std::vector < std::vector< std::pair<unsigned int,unsigned int> > > slowModInterestedVector ; 
+  
   //--- One loop through all events ---//
   bool init = false ; int nSkips = 0 ; 
   std::vector<double> eventTime(n_evts,0.) ;
   
   for (int ievt=0; ievt<n_evts; ievt++) {
+
     // These count the true order of modules, paths
     int pCtr = 0 ; int mCtr = 0 ;
     // These count the (modified) index of modules, paths
@@ -856,13 +1125,23 @@ int main(int argc, char ** argv) {
     if (!init) {
       init = true ;
       TBPerfInfo->GetEntry(ievt) ;
-      initialize((*(HLTPerformanceWrapper->product())),skipTiming,
+      initialize((*(HLTPerformanceWrapper->product())),skipTimingMod,skipTimingPath,
 		 &useModule,&usePath,&useModuleInPath,
 		 &moduleNames,&pathNames,&moduleInPathNames,
 		 numberOfModules,numberOfPaths,&numberOfModulesInPath,
-		 &moduleIndexByPath,&uniqueModule,&globalModuleInPathMapper) ;
+		 &moduleIndexByPath,&uniqueModule,&globalModuleInPathMapper,
+		 &modIdxInterested, modInterested, &moduleExistence) ;
       
-      pathTimeSummaryVector.resize(numberOfPaths,0.) ; 
+      pathTimeSummaryVector.resize(numberOfPaths,0.) ;
+      std::vector<double>  specificPathTimeSummaryVectorAtK (numberOfPaths,0.);
+      for (int k=0; k<numberOfspecificTotalTime; k++) {
+      	specificPathTimeSummaryVector.push_back(specificPathTimeSummaryVectorAtK);
+      }
+      std::pair<unsigned int,unsigned int> pair ;
+      std::vector <std::pair<unsigned int,unsigned int> > slowModInterestedVectorAtK;
+      for (unsigned k=0; k<modInterested.size(); k++) {
+      	slowModInterestedVector.push_back(slowModInterestedVectorAtK);
+      }
       incPathTimeSummaryVector.resize(numberOfPaths,0.) ; 
       moduleTimeSummaryVector.resize(numberOfModules,0.) ; 
       moduleIn.resize(numberOfModules,0.) ;
@@ -872,7 +1151,8 @@ int main(int argc, char ** argv) {
 
       // Event vectors...all have MODIFIED module, path structure
       std::vector< std::vector<double> > dMiP ;
-      std::vector<double> dMod(numberOfModules,-1.) ; 
+      std::vector<double> dMod(numberOfModules,-1.);
+      std::vector<int> dModIdx(numberOfModules,0) ;  
       pCtr = 0 ; pIdx = 0 ; 
       
       for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
@@ -914,14 +1194,15 @@ int main(int argc, char ** argv) {
       }
 
       eventModuleTime.resize(n_evts,dMod) ; 
+      numberOfModulesExecution.resize(n_evts,dModIdx) ; 
       std::vector<double> dPath(numberOfPaths,-1.) ;  
       eventPathStatus.resize(n_evts,dPath) ; 
       skipEvents.resize(numberOfModules,-1) ;
-    }
+    }//end if initialization
 
     // Get the event
     TBPerfInfo->GetEntry(ievt) ;
-
+    
     // Check if we should skip the event
     mCtr = 0 ; mIdx = 0 ;
     bool useThisEvent = true ;
@@ -944,7 +1225,28 @@ int main(int argc, char ** argv) {
     }
 
     if (!useThisEvent) continue ;
-        
+
+    //for all paths, count how many times the each module is executed
+    pCtr = 0 ;pIdx = 0;
+    for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
+      const HLTPerformanceInfo::Path p = (*HLTPerformanceWrapper)->getPath(piter);
+      if (usePath.at(pCtr)) {
+	mCtr = 0 ; mIdx = 0 ; 
+	for ( size_t mm = 0; mm < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); ++mm) {
+	  if ( useModuleInPath.at(pCtr).at(mCtr)) {
+	    if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {
+	      int globalModuleIndex = globalModuleInPathMapper.at(pIdx).at(mIdx) ;
+	      numberOfModulesExecution.at(ievt).at(globalModuleIndex)++ ;
+	      mIdx++;
+	    }
+	  }
+	  mCtr++;
+	}
+	pIdx++;
+      }
+      pCtr++;
+    }
+      
     // Determine module times, module success/failure
     pCtr = 0 ; pIdx = 0 ;
     std::vector<bool> eventCounted(numberOfModules,false) ; 
@@ -953,20 +1255,23 @@ int main(int argc, char ** argv) {
 
       if (usePath.at(pCtr)) {
 	if (p.status().accept()) eventPathStatus.at(ievt).at(pIdx) = -1 ; 
+	
 	mCtr = 0 ; mIdx = 0 ; 
 	for ( size_t mm = 0; mm < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); ++mm) {
 	  const HLTPerformanceInfo::Module & myModule=(*HLTPerformanceWrapper)->getModuleOnPath(mm, piter); 
 	  if ( useModuleInPath.at(pCtr).at(mCtr) ) {
             if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {
-	      moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += getTime(myModule,takeCPUtime) ;
-	      pathTimeSummaryVector.at(pIdx) += getTime((myModule),takeCPUtime) ;
-	      if (uniqueModule.at(pIdx).at(mIdx))
+	      int globalModuleIndex = globalModuleInPathMapper.at(pIdx).at(mIdx) ;
+	      if (numberOfModulesExecution.at(ievt).at(globalModuleIndex) >0) {	      
+		moduleInPathTimeSummaryVector.at(pIdx).at(mIdx) += getTime(myModule,takeCPUtime) ;
+		pathTimeSummaryVector.at(pIdx) += getTime((myModule),takeCPUtime) ;
+	      }
+	      if (moduleExistence.at(globalModuleIndex)==1)
 		incPathTimeSummaryVector.at(pIdx) += getTime((myModule),takeCPUtime) ; 
-                            
+	      
 	      // Determine success/failure
 	      moduleInPathIn.at(pIdx).at(mIdx)++ ;
               
-	      int globalModuleIndex = globalModuleInPathMapper.at(pIdx).at(mIdx) ;
 	      if (globalModuleIndex >= 0) {
 		if (!eventCounted.at(unsigned(globalModuleIndex))) {
 		  eventCounted.at(unsigned(globalModuleIndex)) = true ;
@@ -998,17 +1303,20 @@ int main(int argc, char ** argv) {
       }
       pCtr++ ;
     }
+
     mCtr = 0 ; mIdx = 0 ;
     for (size_t i = 0; i < (*HLTPerformanceWrapper)->numberOfModules(); ++i ) {
       const HLTPerformanceInfo::Module & myModule = (*HLTPerformanceWrapper)->getModule(i);
       if (useModule.at(mCtr++)) {
-	moduleTimeSummaryVector.at(mIdx) += getTime((myModule),takeCPUtime) ; 
-	eventModuleTime.at(ievt).at(mIdx) = getTime((myModule),takeCPUtime) ; 
-	eventTime.at(ievt) += getTime((myModule),takeCPUtime) ; // Calculate total time from used modules
-	// Determine the event where a given module took the most time
-	if ((1000.*getTime((myModule),takeCPUtime)) > longestEventTimeByModule.at(mIdx)) {
-	  longestEventTimeByModule.at(mIdx) = 1000.*getTime((myModule),takeCPUtime) ;
-	  longestEventByModule.at(mIdx) = ievt ;
+	if (numberOfModulesExecution.at(ievt).at(mIdx) >0) {
+	  moduleTimeSummaryVector.at(mIdx) += getTime((myModule),takeCPUtime) ; 
+	  eventModuleTime.at(ievt).at(mIdx) = getTime((myModule),takeCPUtime) ; 
+	  eventTime.at(ievt) += getTime((myModule),takeCPUtime) ; // Calculate total time from used modules
+	  // Determine the event where a given module took the most time
+	  if ((1000.*getTime((myModule),takeCPUtime)) > longestEventTimeByModule.at(mIdx)) {
+	    longestEventTimeByModule.at(mIdx) = 1000.*getTime((myModule),takeCPUtime) ;
+	    longestEventByModule.at(mIdx) = ievt ;
+	  }
 	}
 	mIdx++ ; 
       }
@@ -1034,11 +1342,11 @@ int main(int argc, char ** argv) {
   } else { // Remove the slowest event, compute mean, std. dev. from subset of data 
     double subMean  = (sumTime-longestEventTime)/double(n_evts-1) ; 
     double subRmsSq = (sumTimeSq-longestEventTime*longestEventTime)/double(n_evts-1) ; 
-    double subSigma = std::sqrt(subRmsSq - subMean*subMean) ; 
+    double subSigma = sqrt(subRmsSq - subMean*subMean) ; 
     double subReasMaxTime = subMean + 3. * subSigma ; 
 
-    while (std::pow(10,xscale--) > subReasMaxTime) ;
-    xscale += 2 ; xmax = std::pow(10,xscale+3) ;
+    while (pow(10,xscale--) > subReasMaxTime) ;
+    xscale += 2 ; xmax = pow(10,xscale+3) ;
         
     if ( (xmax/5.) > (subReasMaxTime * 1000.) ) xmax = xmax / 5. ;
     if ( (xmax/2.) > (subReasMaxTime * 1000.) ) xmax = xmax / 2. ;
@@ -1091,6 +1399,22 @@ int main(int argc, char ** argv) {
   TH1D* pathTimeSummary =
     createSummaryHistogram("pathTimeSummary","Average time per path",
 			   numberOfPaths,pathNames,"msec") ;
+
+  std::vector<TH1D*> specificPathTimeSummary;
+  if( numberOfspecificTotalTime > 0){
+    for (int k=0; k<numberOfspecificTotalTime; k++){
+      char nameBuffer[1000], titleBuffer[1000];
+      sprintf(nameBuffer, "specificPathTimeSummary_from_%.0f_ms_to_%.0f_ms", specificTotalTime.at(k).first, specificTotalTime.at(k).second);
+      sprintf(titleBuffer, "Average path time for event with total time from %.0f ms to %.0f ms", specificTotalTime.at(k).first, specificTotalTime.at(k).second);
+      std::string name = nameBuffer;
+      std::string title = titleBuffer;
+      TH1D* specificPathTimeSummaryAtK = 
+	createSummaryHistogram( name, title, numberOfPaths,pathNames,"msec");
+      specificPathTimeSummary.push_back(specificPathTimeSummaryAtK);
+    }
+  }
+
+
   TH1D* incPathTimeSummary =
     createSummaryHistogram("incPathTimeSummary","Average incremental time per path", 
 			   numberOfPaths,pathNames,"msec") ; 
@@ -1150,11 +1474,14 @@ int main(int argc, char ** argv) {
   }
 
   pathTimeSummary->GetYaxis()->SetTitle("msec") ;
+  for (int k=0; k<numberOfspecificTotalTime; k++){
+    specificPathTimeSummary.at(k)->GetYaxis()->SetTitle("msec") ;
+  }
   incPathTimeSummary->GetYaxis()->SetTitle("msec") ;
 
   // If events are skipped, recompute total number of events
-  int numberOfEvents = n_evts - reducedSkipEvents.size() ; 
-  
+  int numberOfEvents = n_evts - reducedSkipEvents.size() ;
+
   // Fill summary histograms
   for (unsigned int i=0; i<unsigned(numberOfPaths); i++) {
     if (pathTimeSummaryVector.at(i) > 0.) {
@@ -1163,7 +1490,7 @@ int main(int argc, char ** argv) {
     } else {
       pathTimeSummary->Fill( double(i), 0. ) ;
     }
-
+    
     if (incPathTimeSummaryVector.at(i) > 0) {
       incPathTimeSummary->Fill( double(i),
 				(1000. * incPathTimeSummaryVector.at(i)/double(numberOfEvents)) ) ;
@@ -1234,6 +1561,23 @@ int main(int argc, char ** argv) {
   std::vector<TH1D*> pathTime =
     createEventHistograms("pathTime","Per event time for path",
 			  numberOfPaths,pathNames,numberOfXbins,xmin,xmax) ; 
+  
+  std::vector< std::vector<TH1D*> > specificPathTime;
+  if( numberOfspecificTotalTime > 0){
+    specificPathTime.push_back(pathTime);
+    for (int k=0; k<numberOfspecificTotalTime; k++){
+      char nameBuffer[1000], titleBuffer[1000];
+      sprintf(nameBuffer, "specificPathTime_from_%.0f_ms_to_%.0f_ms", specificTotalTime.at(k).first, specificTotalTime.at(k).second);
+      sprintf(titleBuffer, "Per event time for path from %.0f msec to %.0f msec", specificTotalTime.at(k).first, specificTotalTime.at(k).second);
+      std::string name = nameBuffer;
+      std::string title = titleBuffer;
+      std::vector<TH1D*> specificPathTimeAtK = 
+	createEventHistograms( name, title, numberOfPaths,pathNames,numberOfXbins,xmin,xmax);
+      specificPathTime.push_back(specificPathTimeAtK);
+    }
+  }
+
+
   std::vector<TH1D*> incPathTime =
     createEventHistograms("incPathTime","Per event incremental time for path",
 			  numberOfPaths,pathNames,numberOfXbins,xmin,xmax) ; 
@@ -1266,15 +1610,84 @@ int main(int argc, char ** argv) {
     pathVsPathSummary->GetYaxis()->SetBinLabel(i+1,pathNames.at(i).c_str()) ; 
   }
 
-  // Fill event histograms
+  //determine in the specificPathTimeSummaryVector
   for (unsigned int ievt=0; ievt<unsigned(n_evts); ievt++) {
+    
+    int pCtr = 0 ; int pIdx = 0 ;
+    int mCtr = 0 ;int mIdx = 0 ;
 
+   // Get the event
+    TBPerfInfo->GetEntry(ievt) ; 
+    
+    // Check if we should skip the event
+    mCtr = 0 ; mIdx = 0 ;
+    bool useThisEvent = true ;
+    if (skipFirstEvent && (nSkips < numberOfModules) ) {
+      for (size_t i = 0; i < (*HLTPerformanceWrapper)->numberOfModules(); ++i ) {
+	const HLTPerformanceInfo::Module & myModule = (*HLTPerformanceWrapper)->getModule(i);
+	if (useModule.at(mCtr++)) {
+	  // Due to the resolution problems with CPUTimer,
+	  // ALWAYS determine event skipping using wall clock time
+	  if (getTime((myModule),false) > 0) {
+	    if (skipEvents.at(mIdx) < 0) {
+	      skipEvents.at(mIdx) = ievt ;
+	      if (useThisEvent) nSkips++ ;
+	      useThisEvent = false ;
+	    }
+	  }
+	  mIdx++ ; 
+	}
+      }
+    }
+    
+    if (!useThisEvent) continue ;
+    
+    if (numberOfspecificTotalTime>0) { 
+      for (int k=0; k<numberOfspecificTotalTime; k++){
+	if (1000.*eventTime.at(ievt)>specificTotalTime.at(k).first 
+	    && 1000.*eventTime.at(ievt)<specificTotalTime.at(k).second) {  	  
+	  pCtr = 0 ; pIdx = 0 ;
+	  for (size_t piter = 0; piter < (*HLTPerformanceWrapper)->numberOfPaths(); ++piter) {
+	    const HLTPerformanceInfo::Path p = (*HLTPerformanceWrapper)->getPath(piter);
+	    if (usePath.at(pCtr)) {
+	      mCtr = 0 ;mIdx = 0 ; 
+	      for ( size_t mm = 0; mm < (*HLTPerformanceWrapper)->getPath(piter).numberOfModules(); ++mm) {
+		const HLTPerformanceInfo::Module & myModule=(*HLTPerformanceWrapper)->getModuleOnPath(mm, piter); 
+		if ( useModuleInPath.at(pCtr).at(mCtr) ) {
+		  if (moduleIndexByPath.at(pIdx).at(mIdx) <= int(p.status().index())) {		  
+		    specificPathTimeSummaryVector.at(k).at(pIdx) += getTime((myModule),takeCPUtime) ;
+		    mIdx++ ;
+		  }
+		}
+		mCtr++ ;
+	      }
+	      pIdx++ ;
+	    }
+	    pCtr++ ;
+	  }
+	}
+      }
+    }
+  }
+
+ // Fill event histograms
+  for (unsigned int ievt=0; ievt<unsigned(n_evts); ievt++) {
+    // Needed to get run/event numbers
+    TBEvtAux->GetEntry(ievt) ;
+    //std::pair<int,int> eventInfo ;
+    std::pair<unsigned int,unsigned int> eventInfo ;
+    eventInfo.first  = EvtAuxWrapper->id().run() ; 
+    eventInfo.second = EvtAuxWrapper->id().event() ;
+      
     if (!useEvent(ievt,reducedSkipEvents)) continue ; 
     totalTime->Fill( 1000. * eventTime.at(ievt) ) ;
+    if ((totalTimeThreshold > 0) && ((1000.*eventTime.at(ievt)) > totalTimeThreshold))
+      slowEventSummaryVector.push_back(eventInfo) ;
+
 
     // Vector to determine which modules actually ran in the event
     std::vector<bool> moduleRan(numberOfModules,false) ; 
-
+    bool slowPathFound = false ; 
     for (unsigned int i=0; i<unsigned(numberOfPaths); i++) {
       double eventPathTime = 0. ; double eventIncPathTime = 0. ;
 
@@ -1284,14 +1697,33 @@ int main(int argc, char ** argv) {
 					  globalModuleInPathMapper.at(i).at(j),j) ;
 	if (mipTime >= 0) {
 	  eventPathTime += mipTime ;
-	  moduleRan.at(unsigned(globalModuleInPathMapper.at(i).at(j))) = true ; 
+	  int globalModuleIndex = globalModuleInPathMapper.at(i).at(j) ;
+	  moduleRan.at(unsigned(globalModuleIndex)) = true ; 
 	  moduleInPathScaledTime.at(i).at(j)->Fill( 1000. * mipTime ) ; 
-	  if (uniqueModule.at(i).at(j)) eventIncPathTime += mipTime ;
-	}  
+	  //if (uniqueModule.at(i).at(j)) eventIncPathTime += mipTime ;
+	  if (moduleExistence.at(globalModuleIndex)==1)
+	    eventIncPathTime += mipTime ;  
+	}
       }
-      pathTime.at(i)->Fill( 1000. * eventPathTime ) ; 
-      incPathTime.at(i)->Fill( 1000. * eventIncPathTime ) ;
+      
+      pathTime.at(i)->Fill( 1000. * eventPathTime ) ;      
+      if (numberOfspecificTotalTime > 0){
+	specificPathTime.at(0).at(i)=pathTime.at(i);
+	for (int k=0; k<numberOfspecificTotalTime;k++) {
+	  if (1000.*eventTime.at(ievt)>specificTotalTime.at(k).first && 1000.*eventTime.at(ievt)<specificTotalTime.at(k).second) {
+	    specificPathTime.at(k+1).at(i)->SetFillColor(2+numberOfspecificTotalTime-(k+1));
+	    specificPathTime.at(k+1).at(i)->Fill(1000.*eventPathTime);
+	  }
+	}
+      }
 
+      incPathTime.at(i)->Fill( 1000. * eventIncPathTime ) ;
+      if ((pathTimeThreshold > 0) && ((1000.*eventPathTime) > pathTimeThreshold)) {
+        if (!slowPathFound) {
+          slowPathFound = true ; 
+          slowPathSummaryVector.push_back(eventInfo) ; 
+        }
+      }
       // Determine relative path success
       if (eventPathStatus.at(ievt).at(i) == -1) nPathSuccess.at(i)++ ;
       bool uniqueSuccess = false ;
@@ -1306,15 +1738,55 @@ int main(int argc, char ** argv) {
       }
       if (uniqueSuccess) uniquePathSuccessVector.at(i)++ ; 
     }
+    bool slowModuleFound = false ; 
     for (int i=0; i<numberOfModules; i++) {
       moduleTime.at(i)->Fill( 1000. * eventModuleTime.at(ievt).at(i) ) ;
+      if ((moduleTimeThreshold > 0) && ((1000.*eventModuleTime.at(ievt).at(i)) > moduleTimeThreshold)) {
+        if (!slowModuleFound) { 
+          slowModuleSummaryVector.push_back(eventInfo) ;
+          slowModuleFound = true ;
+        }
+      }
       // if (eventModuleTime.at(ievt).at(i) > 0)
-      if (moduleRan.at(i))
+      if (moduleRan.at(i)) {
 	moduleScaledTime.at(i)->Fill( 1000. * eventModuleTime.at(ievt).at(i) ) ;
+	for (unsigned int k=0; k<unsigned(modIdxInterested.size()); k++) {
+	  if ((i == modIdxInterested.at(k)) && (moduleTimeThreshold > 0)
+	      && ((1000.*eventModuleTime.at(ievt).at(i)) > moduleTimeThreshold))
+	    slowModInterestedVector.at(k).push_back(eventInfo) ;
+	}
+      }
     }
   }
 
+  //count for number of specific events   
+  std::vector<int> n_specificEvts;
+  for (int k=0; k<numberOfspecificTotalTime; k++) {
+    int evtCtr=0;
+    for (unsigned int ievt=0; ievt<unsigned(n_evts); ievt++) {
+      if (1000.*eventTime.at(ievt)>specificTotalTime.at(k).first 
+	  && 1000.*eventTime.at(ievt)<specificTotalTime.at(k).second) {
+	evtCtr++;
+      }
+    }
+    n_specificEvts.push_back(evtCtr);
+  }
+
   for (unsigned int i=0; i<unsigned(numberOfPaths); i++) {
+    
+    //fill in specificPathTimeSummary
+    if (numberOfspecificTotalTime>0) {
+      for (int k=0; k<numberOfspecificTotalTime; k++) {
+	if (specificPathTimeSummaryVector.at(k).at(i) > 0.) {
+	  specificPathTimeSummary.at(k)->SetLineColor(2+numberOfspecificTotalTime-(k+1));
+	  specificPathTimeSummary.at(k)->Fill( double(i),
+					       (1000. * specificPathTimeSummaryVector.at(k).at(i)/double(n_specificEvts.at(k))) ) ;
+	} else {
+	  specificPathTimeSummary.at(k)->Fill( double(i), 0. ) ;
+	}
+      }
+    }
+
     uniquePathSuccessFraction->Fill(double(i), 100.*uniquePathSuccessVector.at(i) /
 				    double(numberOfEvents)) ;
     for (unsigned int j=0; j<unsigned(numberOfPaths); j++)
@@ -1336,6 +1808,20 @@ int main(int argc, char ** argv) {
       sumfile << "      Due to resolution effects in CPUTimer, event histograms may not reflect reality." << std::endl ; 
       sumfile << "      Please be aware of these limitations when drawing your conclusions." << std::endl << std::endl ; 
     }
+    
+    if (numberOfspecificTotalTime>0) {
+      sumfile << "There are "<<numberOfspecificTotalTime ;
+      if (numberOfspecificTotalTime == 1) sumfile << " range " ;
+      else sumfile << " ranges " ;
+      sumfile << "of specific total time: " << std::endl;
+      for (int i=0; i<numberOfspecificTotalTime; i++) {
+        sumfile << "[ " << specificTotalTime.at(i).first
+                << ", " << specificTotalTime.at(i).second << "]";
+	if (i == numberOfspecificTotalTime-1) sumfile << "\n" ;
+	else sumfile << ", " ;
+      }
+      sumfile << std::endl ;
+    }
 
     if (skipFirstEvent) {
       sumfile << "Skipping " << reducedSkipEvents.size()
@@ -1349,9 +1835,9 @@ int main(int argc, char ** argv) {
       sumfile << std::endl ; 
       sumfile << std::endl ; 
     }
-    if (skipTiming.size() > 0) {
+    if (skipTimingMod.size() > 0) {
       sumfile << "Not including any information from the following excluded modules: " << std::endl ;
-      for (unsigned int i=0; i<skipTiming.size(); i++) sumfile << skipTiming.at(i) << std::endl ;
+      for (unsigned int i=0; i<skipTimingMod.size(); i++) sumfile << skipTimingMod.at(i) << std::endl ;
       sumfile << std::endl ;
     }
         
@@ -1375,7 +1861,78 @@ int main(int argc, char ** argv) {
       }
       sumfile << std::endl ;        
     }
-      
+
+    if (slowEventSummaryVector.size() > 0) {
+      sumfile << "The following " << slowEventSummaryVector.size() ;
+      if (slowEventSummaryVector.size() == 1) sumfile << " event " ;
+      else sumfile << " events " ;
+      sumfile << "took longer than " << totalTimeThreshold << " msec to run: " << std::endl ;
+      sumfile <<"(formatted for usage within the PoolSource module,i.e, Run:Event)"<<std::endl;
+      sumfile <<std::endl;
+      sumfile <<"eventsToProcess = cms.untracked.VEventRange("<<std::endl;
+      for (unsigned int i=0; i<slowEventSummaryVector.size(); i++) {
+        sumfile <<"'"<< slowEventSummaryVector.at(i).first
+                << ":" << slowEventSummaryVector.at(i).second<<"'," << std::endl ;
+      }
+      sumfile<< ")"<<std::endl;
+      sumfile << std::endl ; 
+    }
+    
+    if (slowPathSummaryVector.size() > 0) {
+      sumfile << "The following " << slowPathSummaryVector.size() ;
+      if (slowPathSummaryVector.size() == 1) sumfile << " event " ;
+      else sumfile << " events " ;
+      sumfile << "had at least one path that took more than " << totalTimeThreshold << " msec to run: " << std::endl ;
+
+
+      sumfile <<"(formatted for usage within the PoolSource module,i.e, Run:Event)"<<std::endl;
+      sumfile <<std::endl;
+      sumfile <<"eventsToProcess = cms.untracked.VEventRange("<<std::endl;
+      for (unsigned int i=0; i<slowPathSummaryVector.size(); i++) {
+        sumfile << "'" << slowPathSummaryVector.at(i).first
+                << ":" << slowPathSummaryVector.at(i).second <<"',"<< std::endl ;
+      }
+      sumfile<< ")"<<std::endl;
+      sumfile << std::endl ; 
+    }
+    
+    if (slowModuleSummaryVector.size() > 0) {
+      sumfile << "The following " << slowModuleSummaryVector.size() ;
+      if (slowModuleSummaryVector.size() == 1) sumfile << " event " ;
+      else sumfile << " events " ;
+      sumfile << "had at least one module that took more than " << moduleTimeThreshold << " msec to run: " << std::endl ;
+      sumfile <<"(formatted for usage within the PoolSource module,i.e, Run:Event)"<<std::endl;
+      sumfile <<std::endl;
+      sumfile <<"eventsToProcess = cms.untracked.VEventRange("<<std::endl;
+      for (unsigned int i=0; i<slowModuleSummaryVector.size(); i++) {
+        sumfile << "'" << slowModuleSummaryVector.at(i).first
+                << ":" << slowModuleSummaryVector.at(i).second<<"'," << std::endl ;
+      }
+      sumfile<< ")"<<std::endl;
+      sumfile << std::endl ; 
+    }
+
+    if (slowModInterestedVector.size() > 0) {
+  
+      for (unsigned i=0; i<slowModInterestedVector.size(); i++) {
+
+	sumfile << "The following " <<  slowModInterestedVector.at(i).size()-1 ;
+	if (slowModInterestedVector.at(i).size()-1 == 1) sumfile << " event " ;
+	else sumfile << " events " ;
+	sumfile << "had the module "<<modInterested.at(i)<<" that took more than " << moduleTimeThreshold << " msec to run: " << std::endl ;
+	sumfile <<"(formatted for usage within the PoolSource module,i.e, Run:Event)"<<std::endl;
+	sumfile <<std::endl;
+	sumfile <<"eventsToProcess = cms.untracked.VEventRange("<<std::endl;
+	for (unsigned int j=1; j<slowModInterestedVector.at(i).size(); j++) {
+	  sumfile << "'" << slowModInterestedVector.at(i).at(j).first
+		  << ":" << slowModInterestedVector.at(i).at(j).second<<"'," << std::endl ;
+	}
+	sumfile<< ")"<<std::endl;
+	sumfile << std::endl ; 
+	
+      }
+    }
+    
     char value[10] ; 
     sumfile << "Average path times are as follows (all in msec): " << std::endl ;
     for (int i=1; i<=pathTimeSummary->GetNbinsX(); i++) {
@@ -1506,20 +2063,32 @@ int main(int argc, char ** argv) {
 	createTOCentry(pdf,"Average module (in path) time",pageNumber,&tocList,pathNames) ; 
 	createTOCentry(pdf,"Average module (in path) running time",pageNumber,&tocList,pathNames) ; 
 	createTOCentry(pdf,"Average path time",pageNumber, &tocList) ; 
-	createTOCentry(pdf,"Average incremental path time",pageNumber, &tocList) ; 
+	for (int k=0; k<numberOfspecificTotalTime; k++){
+	  char titleBuffer[1000];
+	  sprintf(titleBuffer, "Average path time from %6.0f msec to %6.0f msec", specificTotalTime.at(k).first, specificTotalTime.at(k).second);
+	  std::string title = titleBuffer;
+	  createTOCentry(pdf,titleBuffer,pageNumber, &tocList) ; 
+	}
+	createTOCentry(pdf,"Average incremental path time",pageNumber, &tocList) ;
       }
-          
-      createTOCentry(pdf,"Path rejection factor",pageNumber,&tocList) ; 
-      createTOCentry(pdf,"Path success rate",pageNumber,&tocList) ; 
-      if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
-	createTOCentry(pdf,"Path vs. Path success rate",pageNumber,&tocList) ; 
-	createTOCentry(pdf,"Fraction of single path success",pageNumber,&tocList) ; 
+      
+      if (writeRejectionSection) {
+	createTOCentry(pdf,"Path rejection factor",pageNumber,&tocList) ; 
+	createTOCentry(pdf,"Path success rate",pageNumber,&tocList) ; 
+	if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
+	  createTOCentry(pdf,"Path vs. Path success rate",pageNumber,&tocList) ; 
+	  createTOCentry(pdf,"Fraction of single path success",pageNumber,&tocList) ; 
+	}
       }
+      
       createTOCentry(pdf,"Failing module (by path)",pageNumber,&tocList,pathNames) ; 
-      createTOCentry(pdf,"Module Rejection factor (by path)",pageNumber,&tocList,pathNames) ; 
-      createTOCentry(pdf,"Module Rejection factor per unit running time (by path)",
-		     pageNumber,&tocList,pathNames) ; 
-          
+      
+      if (writeRejectionSection) {
+	createTOCentry(pdf,"Module Rejection factor (by path)",pageNumber,&tocList,pathNames) ; 
+	createTOCentry(pdf,"Module Rejection factor per unit running time (by path)",
+		       pageNumber,&tocList,pathNames) ; 
+      }
+      
       if (writeEventSection) {
 	createTOCentry(pdf,"Per event module time",pageNumber,&tocList,moduleNames) ; 
 	createTOCentry(pdf,"Per event module running time",pageNumber,&tocList,moduleNames) ; 
@@ -1541,44 +2110,53 @@ int main(int argc, char ** argv) {
     //-----------------------//
     //--- Plot Histograms ---//
     //-----------------------//
-    plot1D(totalTime,c1,writePdf) ;
+    plot1D(totalTime,c1,writePdf, LogYScale) ;
 
     //--- Average time (summary) plots ---//
     if (numberOfModules > 0) {
-      plot1D(moduleTimeSummary,c1,writePdf) ; 
-      plot1D(moduleScaledTimeSummary,c1,writePdf) ;
+      plot1D(moduleTimeSummary,c1,writePdf, LinYScale) ; 
+      plot1D(moduleScaledTimeSummary,c1,writePdf, LinYScale) ;
     }
         
     if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
-      plotMany(moduleInPathTimeSummary,c1,writePdf) ;
-      plotMany(moduleInPathScaledTimeSummary,c1,writePdf) ;
+      plotMany(moduleInPathTimeSummary,c1,writePdf, LinYScale) ;
+      plotMany(moduleInPathScaledTimeSummary,c1,writePdf, LinYScale) ;
     }
     if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
-      plot1D(pathTimeSummary,c1,writePdf) ; 
-      plot1D(incPathTimeSummary,c1,writePdf) ; 
+      plot1D(pathTimeSummary,c1,writePdf, LinYScale) ; 
+      if( numberOfspecificTotalTime > 0){
+	for (int k=0; k<numberOfspecificTotalTime; k++){
+      	  plot1D(specificPathTimeSummary.at(k),c1,writePdf, LinYScale) ; 
+	}
+      }
+      plot1D(incPathTimeSummary,c1,writePdf, LinYScale) ; 
     }
         
     //--- Success/Rejection plots ---//
-    plot1D(pathRejection,pathRejectAll,c1,writePdf) ; 
-    plot1D(pathSuccessFraction,c1,writePdf) ; 
+    plot1D(pathRejection,pathRejectAll,c1,writeRejectionSection, LinYScale) ; 
+    plot1D(pathSuccessFraction,c1,writeRejectionSection, LinYScale) ; 
     if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
-      plot2D(pathVsPathSummary,c1,writePdf) ; 
-      plot1D(uniquePathSuccessFraction,c1,writePdf) ; 
+      plot2D(pathVsPathSummary,c1,writeRejectionSection) ; 
+      plot1D(uniquePathSuccessFraction,c1,writeRejectionSection, LinYScale) ; 
     }
-    plotMany(failedModule,c1,writePdf) ;
-    plotMany(moduleInPathRejection,moduleInPathRejectAll,c1,writePdf) ;
-    plotMany(moduleInPathRejectTime,c1,writePdf) ;
+    plotMany(failedModule,c1,writePdf, LinYScale) ;
+    plotMany(moduleInPathRejection,moduleInPathRejectAll,c1,writeRejectionSection, LinYScale) ;
+    plotMany(moduleInPathRejectTime,c1,writeRejectionSection, LinYScale) ;
         
     //--- Event timing ---//
-    plotMany(moduleTime,c1,writeEventSection) ;
-    plotMany(moduleScaledTime,c1,writeEventSection) ; 
+    plotMany(moduleTime,c1,writeEventSection, LogYScale) ;
+    plotMany(moduleScaledTime,c1,writeEventSection, LogYScale) ; 
     if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
       plotModuleInPath(moduleInPathScaledTime,c1,
-		       numberOfPaths,numberOfModulesInPath,writeEventSection) ; 
+		       numberOfPaths,numberOfModulesInPath,writeEventSection, LogYScale) ; 
     }
-    plotMany(pathTime,c1,writeEventSection) ;
+    if (numberOfspecificTotalTime==0){
+      plotMany(pathTime,c1,writeEventSection, LogYScale) ;
+    } else {
+      plotMany(specificPathTime, c1,writeEventSection, LogYScale) ;
+    }
     if ((*HLTPerformanceWrapper)->numberOfPaths() > 1) {
-      plotMany(incPathTime,c1,writeEventSection) ;
+      plotMany(incPathTime,c1,writeEventSection, LogYScale) ;
     }
         
     if (writePdf) pdf->Close() ; 
